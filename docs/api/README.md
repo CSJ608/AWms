@@ -1,12 +1,12 @@
-# API 契约导航与通用规范（已定稿 v1.2）
+# API 契约导航与通用规范（已定稿 v1.3）
 
-> 状态：**已定稿 v1.2（2026-08-10，用户确认）**。前后端唯一依据；变更走评审（先改契约再改实现）。
+> 状态：**已定稿 v1.3（2026-08-10，用户确认）**。前后端唯一依据；变更走评审（先改契约再改实现）。
 
 ## 一、导航（docs/api/）
 
 | 文件 | 内容 | 状态 |
 |---|---|---|
-| README.md（本文件） | 导航 + 通用规范（含编号规范 2.9） | ✅ 定稿 v1.2 |
+| README.md（本文件） | 导航 + 通用规范（含编号规范 2.9） | ✅ 定稿 v1.3 |
 | 枚举与错误码.md | 全部枚举与错误码 | ✅ 定稿 v1.1 |
 | 物料.md / 仓库库位.md / 来源.md | 主数据 | 🟡 草案 v0.1 |
 | 批次.md | 主数据（系统自动建批次） | 🟡 草案 v0.3 |
@@ -42,7 +42,14 @@
 ### 2.8 错误码形式
 - 字符串 code（模块前缀）+ hex 内部编号（区间预占）；前端只消费字符串 code。
 
-### 2.9 编号规范（编号服务，2026-08-10 确认）
+### 2.9 编号规范（编号服务，2026-08-10 确认 v1.3）
+
+**设计原则（2026-08-10 讨论定）**：
+
+1. **前缀是为了"人"**：业务熟手看编号即知业务类型——前缀 ≤2 位固定字符（如 PO/RCP），用于用户可见单据。
+2. **不给用户看的编号可无前缀**：如事务组号，纯日期+流水号即可。
+3. **规则可插拔、可调整**：前缀/日期/序号长度/重置周期/组合方式均可配置；**规则变更只影响新号，不影响历史号**。
+4. **未来扩展预留**：批量生成（如 HU 码一次生成 N 个）、复合编码（自定义组合段，如 HU 码某位代表产品/型号+批次+流水）、全局唯一码的位数设计——本期不做，但编号服务保留扩展点。
 
 **规则注册属性**（每种编号注册一条规则）：
 
@@ -52,25 +59,29 @@
 | scopeKey | 作用域键 | GLOBAL / MATERIAL / 动态参数（如单据类型 ty） |
 | prefix | 前缀（可空、可动态） | "PO" / "RCP" / 空 |
 | dateFormat | 日期格式（可空） | yyyyMMdd / yyMMdd / 空 |
-| seqLength | 序号长度（补零） | 4 / 3 |
+| seqLength | 序号长度（补零） | 4 / 3 / 9 |
 | resetPeriod | 重置周期 | DAILY / MONTHLY / NEVER |
 | onExhaustion | 序号耗尽行为 | THROW（抛 NUMBER_EXHAUSTED）/ WRAP（默认禁用） |
+| formatter | 组合方式（默认 前缀+日期+序号；可插拔） | 默认 / 自定义（未来 HU） |
 
 **本期注册表**：
 
-| type | scopeKey | prefix | dateFormat | seqLen | 示例 |
-|---|---|---|---|---|---|
-| INBOUND_ORDER | 按 ty 动态 | PO/PR/OT | yyyyMMdd | 4 | PO-20260810-0001 |
-| RECEIPT | GLOBAL | RCP | yyyyMMdd | 4 | RCP-20260810-0001 |
-| BATCH | MATERIAL | 无 | yyMMdd | 3 | 260810001 |
-| TXN_GROUP | GLOBAL | TXN | yyyyMMdd | 4 | TXN-20260810-0001 |
-| UNIQUE_CODE | GLOBAL | BOX | yyyyMMdd | 4 | BOX-20260810-0001 |
-| IMPORT_TASK | GLOBAL | IMP | yyyyMMdd | 4 | IMP-20260810-0001 |
+| type | scopeKey | prefix | dateFormat | seqLen | reset | 示例 |
+|---|---|---|---|---|---|---|
+| INBOUND_ORDER | 按 ty 动态 | PO/PR/OT | yyyyMMdd | 4 | DAILY | PO-20260810-0001 |
+| RECEIPT | GLOBAL | RCP | yyyyMMdd | 4 | DAILY | RCP-20260810-0001 |
+| BATCH | MATERIAL | 无 | yyMMdd | 3 | DAILY | 260810001 |
+| TXN_GROUP | GLOBAL | **无** | yyMMdd | **9** | DAILY | **260810000000001（15 位）** |
+| UNIQUE_CODE | GLOBAL | BOX | yyyyMMdd | 4 | DAILY | BOX-20260810-0001 |
+| IMPORT_TASK | GLOBAL | IMP | yyyyMMdd | 4 | DAILY | IMP-20260810-0001 |
 
-**实现**：序号表 Sequence(type, scopeKey, bizDate, lastNo)，唯一(type, scopeKey, bizDate)，原子自增（UPDATE...RETURNING，行锁）；规则在代码注册。
-**生成时机**：与业务同一事务；回滚跳号允许（保证唯一与单调）。
-**耗尽**：序号超过 seqLength 上限 → NUMBER_EXHAUSTED（0x000007）。
-**唯一性**：对外编号在"作用域内"唯一；**批次号按物料+天唯一（不同物料可同号，永远与物料一起展示/扫码，无歧义）**；UUID 仅内部主键；前端不生成编号。
+**实现与扩展**：
+
+- 序号表 Sequence(type, scopeKey, bizDate, lastNo)，唯一(type,scopeKey,bizDate)，原子自增（UPDATE...RETURNING，行锁）。
+- **批量分配**：支持一次分配 N 个连续序号（NextN），为未来 HU 批量生成预留。
+- **复合规则**：formatter 可插拔——默认 前缀+日期+序号；未来 HU 等自定义组合段（如产品/型号位+批次+流水）。
+- **规则变更只影响新号**；与业务同一事务；回滚跳号允许（唯一+单调，不追求连续）。
+- 唯一性：对外编号在作用域内唯一；批次号按物料+天唯一；UUID 仅内部主键；前端不生成编号。
 
 ## 三、修订记录
 
@@ -81,4 +92,5 @@
 | 2026-08-10 | v0.3 HTTP 状态码理由/数量示例/静默动作 |
 | 2026-08-10 | v1.0 定稿：code=判断钥匙 |
 | 2026-08-10 | v1.1：编号规范 2.9 |
-| 2026-08-10 | v1.2：编号规则注册属性（scopeKey/prefix/dateFormat/seqLen/reset/耗尽）；批次号 YYMMDD+3 位按物料+天 |
+| 2026-08-10 | v1.2：规则注册属性；批次号 YYMMDD+3 位 |
+| 2026-08-10 | v1.3：编号设计原则（前缀为人/内部号无前缀/规则可插拔）；事务组号 15 位；批量分配与复合规则扩展点 |
