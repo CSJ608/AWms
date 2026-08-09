@@ -1,0 +1,23 @@
+# Node / 前端
+node_modules/
+dist/
+.vite-temp/
+*.tsbuildinfo
+*.log
+
+# .NET / 后端
+bin/
+obj/
+*.user
+
+# 环境与密钥
+.env
+.env.*
+!*.env.example
+
+# 过程状态（不入 git）
+docs/methodology/_handoff.md
+
+# 系统
+.DS_Store
+Thumbs.db
