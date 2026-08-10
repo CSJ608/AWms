@@ -340,7 +340,16 @@ public class AuthService
 
     public async Task<RoleItem> AssignPermissionsAsync(Guid roleId, AssignPermissionsRequest request)
     {
-        return await UpdateRoleAsync(roleId, new UpdateRoleRequest(string.Empty, request.PermissionCodes));
+        var role = await _db.Roles.Include(r => r.RolePermissions).ThenInclude(rp => rp.Permission).FirstOrDefaultAsync(r => r.Id == roleId)
+            ?? throw new DomainException("ROLE_NOT_FOUND", "角色不存在", 404);
+
+        _db.RolePermissions.RemoveRange(role.RolePermissions);
+        var perms = await _db.Permissions.Where(p => request.PermissionCodes.Contains(p.Code)).ToListAsync();
+        foreach (var p in perms)
+            _db.RolePermissions.Add(new RolePermission { RoleId = role.Id, PermissionId = p.Id });
+
+        await _db.SaveChangesAsync();
+        return ToRoleItem(role);
     }
 
     public async Task DeleteRoleAsync(Guid id)
@@ -373,4 +382,5 @@ public class AuthService
             r.RolePermissions.Select(rp => rp.Permission.Code).Distinct().ToList(),
             r.CreatedAt);
 }
+
 
