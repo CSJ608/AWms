@@ -5,7 +5,7 @@ namespace AWms.Domain.Interfaces;
 
 public interface IQueryService
 {
-    (IQueryable<T> Query, PagedResult<T> Result) Apply<T>(
+    Task<(IQueryable<T> Query, PagedResult<T> Result)> ApplyAsync<T>(
         IQueryable<T> source,
         FilterRequest request,
         IReadOnlySet<string> fieldWhitelist,
@@ -14,7 +14,6 @@ public interface IQueryService
         string defaultSortDir = "asc",
         bool isTimeBasedList = false) where T : class;
 }
-
 public interface INumberService
 {
     Task<string> NextAsync(string type, string? scopeKey = null);
@@ -39,3 +38,5 @@ public interface ITimeProvider
     DateTime UtcNow { get; }
     DateOnly Today { get; }
 }
+
+

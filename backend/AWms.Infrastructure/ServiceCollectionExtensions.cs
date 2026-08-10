@@ -31,9 +31,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITokenService>(sp => sp.GetRequiredService<TokenService>());
         services.AddScoped<AuthService>();
         services.AddScoped<NumberingService>();
+        services.AddScoped<IQueryService, QueryService>();
+        services.AddScoped<MasterDataService>();
         services.AddScoped<AdminSeedService>();
 
         return services;
     }
 }
+
 
