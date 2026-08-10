@@ -10,7 +10,7 @@ using AWms.Infrastructure.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 // Services
-builder.Services.AddControllers();
+builder.Services.AddControllers(options => options.Filters.Add<AWms.Api.Middleware.IdempotencyFilter>());
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -95,5 +95,6 @@ app.MapControllers();
 app.Run();
 
 public partial class Program { }
+
 
 
