@@ -1,6 +1,6 @@
 # API 契约导航与通用规范（已定稿 v1.3）
 
-> 状态：**已定稿 v1.7（2026-08-10，用户确认）**。前后端唯一依据；变更走评审（先改契约再改实现）。
+> 状态：**已定稿 v1.8（2026-08-10，用户确认）**。前后端唯一依据；变更走评审（先改契约再改实现）。
 
 ## 一、导航（docs/api/）
 
@@ -105,6 +105,7 @@
 - **操作符白名单**：eq / neq / contains / startsWith / in / notIn / gt / gte / lt / lte / between / isNull / isNotNull。
 - **字段白名单**：每个接口声明可筛选字段（field registry）；白名单外字段 → 400 VALIDATION_ERROR。
 - 全部参数化（防注入）；支持嵌套 and/or。
+- **固化（2026-08-10）**：in/notIn 的 value 为数组；between 对纯日期字段按“当日 00:00 ~ 次日 00:00”处理（含当日全天）；sort 本期仅支持单列（单元素数组）。
 
 **排序（sort 白名单）**：
 
@@ -156,3 +157,4 @@
 | 2026-08-10 | v1.5：2.10 增加字段元数据 FieldMeta（type/operators/options）+ 运行时元数据端点 |
 | 2026-08-10 | v1.6：ref 字段交互模式（通用 ReferencePicker：快捷搜索+完整弹窗）+ keyword 约定 |
 | 2026-08-10 | v1.7：引用实体规则（keyword 必提供；searchCode 建议提供；无需助记实体用自然编码） |
+| 2026-08-10 | v1.8：Idempotency-Key 实现约定；filter DSL 固化（in/notIn 数组、between 日期边界、sort 单列） |

@@ -1,6 +1,6 @@
 # ADR-005：认证方式——本期内部账号 + Bearer token，不做 OAuth（草案）
 
-> 状态：**已采纳（2026-08-10，用户确认）**。
+> 状态：**已采纳 v0.3（2026-08-10，用户确认 + 评审）**。
 
 ## 背景
 
@@ -21,7 +21,7 @@
 ## 决策（建议）
 
 1. **本期**：用户名+密码 → Bearer token（JWT 或等值，含 sub/exp/roles/permissions）；login/refresh/me/logout 接口形态（已定，认证权限契约 v0.1）。
-2. **密码安全**：哈希存储（Argon2id/bcrypt）；token 有效期 + refresh；管理员重置密码，无自助注册。
+2. **密码安全**：哈希存储（**Argon2id**，评审 A-4 收敛；备选 ASP.NET Core Identity PasswordHasher）；token 有效期 + refresh；管理员重置密码，无自助注册。
 3. **扩展点（本期不做）**：
    - 未来 SSO：用 **OIDC** 接入企业 IdP——前端只改登录交互（跳 IdP），Bearer 接口形态不变；
    - 未来服务间对接：**client credentials / API Key**，不影响用户认证。
@@ -43,3 +43,4 @@
 |---|---|
 | 2026-08-10 | v0.1 初始草案 |
 | 2026-08-10 | v0.2 采纳：本期内部账号 + Bearer token，不做 OAuth；预留 OIDC/client credentials 扩展点 |
+| 2026-08-10 | v0.3 密码哈希收敛 Argon2id |
