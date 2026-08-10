@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Encodings.Web;
 using AWms.Domain.Dtos.Common;
 using AWms.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -21,7 +22,8 @@ public class IdempotencyFilter : IAsyncActionFilter
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping // 与 MVC 输出一致（保留非 ASCII 字面量）
     };
 
     private readonly IdempotencyService _service;
@@ -135,3 +137,4 @@ public class IdempotencyFilter : IAsyncActionFilter
         }
     }
 }
+
