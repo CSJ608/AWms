@@ -213,5 +213,151 @@ public class MasterDataServiceTests
 
         Assert.Equal("VALIDATION_ERROR", ex.Code);
     }
-}
 
+    [Fact]
+    public async Task CreateLocationAsync_仓内重复码_抛409()
+    {
+        var db = CreateDb();
+        var wh = new Warehouse { Code = "WH-01", Name = "仓1" };
+        db.Warehouses.Add(wh);
+        db.Locations.Add(new Location { WarehouseId = wh.Id, Code = "STG-01", Type = LocationType.STAGING });
+        await db.SaveChangesAsync();
+        var service = new MasterDataService(db, new QueryService());
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.CreateLocationAsync(wh.Id, new("STG-01", null, "STAGING", null)));
+        Assert.Equal("LOCATION_CODE_DUPLICATED", ex.Code);
+        Assert.Equal(409, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateLocationAsync_仓库不存在_抛404()
+    {
+        var db = CreateDb();
+        var service = new MasterDataService(db, new QueryService());
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.CreateLocationAsync(Guid.NewGuid(), new("STG-01", null, "STAGING", null)));
+        Assert.Equal("WAREHOUSE_NOT_FOUND", ex.Code);
+        Assert.Equal(404, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateLocationAsync_库位类型无效_抛400()
+    {
+        var db = CreateDb();
+        var wh = new Warehouse { Code = "WH-01", Name = "仓1" };
+        db.Warehouses.Add(wh);
+        await db.SaveChangesAsync();
+        var service = new MasterDataService(db, new QueryService());
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.CreateLocationAsync(wh.Id, new("STG-01", null, "BOGUS", null)));
+        Assert.Equal("VALIDATION_ERROR", ex.Code);
+        Assert.Equal(400, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteWarehouseAsync_有库位_抛409()
+    {
+        var db = CreateDb();
+        var wh = new Warehouse { Code = "WH-01", Name = "仓1" };
+        db.Warehouses.Add(wh);
+        db.Locations.Add(new Location { WarehouseId = wh.Id, Code = "STG-01", Type = LocationType.STAGING });
+        await db.SaveChangesAsync();
+        var service = new MasterDataService(db, new QueryService());
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => service.DeleteWarehouseAsync(wh.Id));
+        Assert.Equal("WAREHOUSE_IN_USE", ex.Code);
+        Assert.Equal(409, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteSourceAsync_被批次引用_抛409()
+    {
+        var db = CreateDb();
+        var src = new Source { Type = SourceType.SUPPLIER, Code = "SUP-001", Name = "供应商1" };
+        var mat = new Material { Code = "MAT-001", Name = "物料1" };
+        db.Sources.Add(src);
+        db.Materials.Add(mat);
+        db.Batches.Add(new Batch { MaterialId = mat.Id, MaterialCode = "MAT-001", BatchNo = "260810001", SourceType = "SUPPLIER", SourceCode = "SUP-001" });
+        await db.SaveChangesAsync();
+        var service = new MasterDataService(db, new QueryService());
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => service.DeleteSourceAsync(src.Id));
+        Assert.Equal("SOURCE_IN_USE", ex.Code);
+        Assert.Equal(409, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateMaterialAsync_非法枚举_抛400()
+    {
+        var db = CreateDb();
+        var service = new MasterDataService(db, new QueryService());
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.CreateMaterialAsync(new("MAT-001", "物料1", null, false, "NOPE", "CT", null, "ENABLED")));
+        Assert.Equal("VALIDATION_ERROR", ex.Code);
+        Assert.Equal(400, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateMaterialAsync_非法UOM_抛400()
+    {
+        var db = CreateDb();
+        var service = new MasterDataService(db, new QueryService());
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.CreateMaterialAsync(new("MAT-001", "物料1", null, false, "NONE", "XX", null, "ENABLED")));
+        Assert.Equal("VALIDATION_ERROR", ex.Code);
+        Assert.Equal(400, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task SearchMaterialBatchesAsync_物料不存在_抛404()
+    {
+        var db = CreateDb();
+        var service = new MasterDataService(db, new QueryService());
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.SearchMaterialBatchesAsync(Guid.NewGuid(), new FilterRequest(null, null, null, null, null, null, null, null, null, null, 1, 20)));
+        Assert.Equal("MATERIAL_NOT_FOUND", ex.Code);
+        Assert.Equal(404, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task SearchMaterialsAsync_带filter_真实筛选()
+    {
+        var db = CreateDb();
+        db.Materials.AddRange(
+            new Material { Code = "MAT-001", Status = MaterialStatus.ENABLED },
+            new Material { Code = "MAT-002", Status = MaterialStatus.DISABLED });
+        await db.SaveChangesAsync();
+        var service = new MasterDataService(db, new QueryService());
+        var filter = new FilterGroup("and", new List<FilterCondition>
+        {
+            new("status", "eq", "ENABLED")
+        });
+
+        var result = await service.SearchMaterialsAsync(new FilterRequest(null, null, null, null, null, null, null, null, null, filter, 1, 20));
+
+        Assert.Equal(1, result.Total);
+        Assert.Equal("MAT-001", result.Items[0].Code);
+    }
+
+    [Fact]
+    public async Task SearchMaterialsAsync_白名单外字段_抛400()
+    {
+        var db = CreateDb();
+        var service = new MasterDataService(db, new QueryService());
+        var filter = new FilterGroup("and", new List<FilterCondition>
+        {
+            new("hackedField", "eq", "x")
+        });
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.SearchMaterialsAsync(new FilterRequest(null, null, null, null, null, null, null, null, null, filter, 1, 20)));
+        Assert.Equal("VALIDATION_ERROR", ex.Code);
+        Assert.Equal(400, ex.StatusCode);
+    }
+}
