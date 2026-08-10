@@ -112,6 +112,10 @@
 - 每个接口声明**可排序字段白名单**（如 materialCode / totalQty / status / updatedAt）；
 - 请求：`sort=[{"field":"totalQty","dir":"desc"}]`；field 必须在白名单内、dir ∈ asc/desc，否则 400；
 - 默认排序由各接口定义（如 occurredAt desc）。
+- **排序唯一性兜底（v2.0，2026-08-10 用户确认）**：分页结果必须是**确定性全序**。服务端在用户排序（或默认排序）之后**自动追加唯一兜底列**，不暴露给前端（API 的 sort 仍为单元素数组）：
+  - 主数据列表（物料/仓库/库位/来源/批次）：追加 `id` 兜底；
+  - 含时间语义的列表（批次、导入导出任务、流水/日志等）：追加 `createdAt, id` 兜底，且时间性列表**默认 `createdAt DESC`（最新在前）**；
+  - 禁止仅按非唯一列排序（会导致翻页重复/漏行）。
 
 **传输约定（v1.9，2026-08-10 用户裁决）**：
 - **标准列表查询统一走 POST /api/{resource}/search**（body JSON：{ keyword?, 固定参数..., filter?, sort?, page?, pageSize? }）；GET 的 query string 不适合复杂 JSON filter/sort，避免再出现"GET+body"这类歧义实现。
@@ -166,3 +170,4 @@
 | 2026-08-10 | v1.7：引用实体规则（keyword 必提供；searchCode 建议提供；无需助记实体用自然编码） |
 | 2026-08-10 | v1.8：Idempotency-Key 实现约定；filter DSL 固化（in/notIn 数组、between 日期边界、sort 单列） |
 | 2026-08-10 | v1.9：列表查询传输约定——标准查询 POST /api/{resource}/search，GET keyword 仅作快捷搜索（用户裁决） |
+| 2026-08-10 | v2.0：排序唯一性兜底——分页排序须确定性全序，服务端追加 id / createdAt+id 兜底；时间性列表默认 createdAt DESC |
