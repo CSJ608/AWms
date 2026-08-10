@@ -30,8 +30,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<TokenService>();
         services.AddSingleton<ITokenService>(sp => sp.GetRequiredService<TokenService>());
         services.AddScoped<AuthService>();
+        services.AddScoped<NumberingService>();
         services.AddScoped<AdminSeedService>();
 
         return services;
     }
 }
+
