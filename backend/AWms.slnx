@@ -1,0 +1,16 @@
+﻿<Solution>
+  <Folder Name="/build/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="AWms.Domain/AWms.Domain.csproj" />
+    <Project Path="AWms.Infrastructure/AWms.Infrastructure.csproj" />
+    <Project Path="AWms.Api/AWms.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="AWms.Tests/AWms.Tests.csproj" />
+    <Project Path="AWms.IntegrationTests/AWms.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

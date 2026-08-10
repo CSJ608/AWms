@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>AWms.Domain</RootNamespace>
+    <AssemblyName>AWms.Domain</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="UUIDNext" />
+  </ItemGroup>
+
+</Project>
