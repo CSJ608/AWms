@@ -17,6 +17,7 @@ obj/
 
 # 过程状态（不入 git）
 docs/methodology/_handoff.md
+.hermes-tmp/
 
 # 系统
 .DS_Store
