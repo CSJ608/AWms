@@ -1,6 +1,7 @@
 ﻿using AWms.Domain.Dtos.Common;
 using AWms.Domain.Dtos.Auth;
 using AWms.Domain.Dtos.Users;
+using AWms.Domain.Dtos.Roles;
 using AWms.Domain.Entities;
 using AWms.Domain.Enums;
 using AWms.Domain.Interfaces;
@@ -188,6 +189,117 @@ public class AuthServiceTests
         var ex = await Assert.ThrowsAsync<DomainException>(() => service.DeleteRoleAsync(role.Id));
         Assert.Equal("ROLE_IN_USE", ex.Code);
         Assert.Equal(409, ex.StatusCode);
+}
+
+    [Fact]
+    public async Task UpdateUserAsync_改名改状态_生效()
+    {
+        var db = CreateDbContext();
+        var hasher = new Argon2PasswordHasher();
+        var user = new User { Id = Guid.NewGuid(), Username = "u1", Name = "原名", PasswordHash = hasher.Hash("x"), Status = UserStatus.ACTIVE };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        var service = CreateAuthService(db);
+
+        var result = await service.UpdateUserAsync(user.Id, new("新名", "DISABLED"));
+
+        Assert.Equal("新名", result.Name);
+        Assert.Equal("DISABLED", result.Status);
+        var reloaded = await db.Users.AsNoTracking().SingleAsync(u => u.Id == user.Id);
+        Assert.Equal(UserStatus.DISABLED, reloaded.Status);
+    }
+
+    [Fact]
+    public async Task AssignRolesAsync_替换角色_生效()
+    {
+        var db = CreateDbContext();
+        var hasher = new Argon2PasswordHasher();
+        var user = new User { Id = Guid.NewGuid(), Username = "u1", Name = "名", PasswordHash = hasher.Hash("x") };
+        var role1 = new Role { Code = "R1", Name = "角色一" };
+        var role2 = new Role { Code = "R2", Name = "角色二" };
+        db.Users.Add(user);
+        db.Roles.AddRange(role1, role2);
+        await db.SaveChangesAsync();
+        var service = CreateAuthService(db);
+
+        var result = await service.AssignRolesAsync(user.Id, new AssignRolesRequest(new List<Guid> { role1.Id, role2.Id }));
+
+        Assert.Equal(2, result.Roles.Count);
+    }
+
+    [Fact]
+    public async Task ResetPasswordAsync_新密码可登录()
+    {
+        var db = CreateDbContext();
+        var hasher = new Argon2PasswordHasher();
+        var user = new User { Id = Guid.NewGuid(), Username = "u1", Name = "名", PasswordHash = hasher.Hash("old") };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        var service = CreateAuthService(db);
+
+        await service.ResetPasswordAsync(user.Id, "new-pass");
+
+        var reloaded = await db.Users.AsNoTracking().SingleAsync(u => u.Id == user.Id);
+        Assert.True(hasher.Verify("new-pass", reloaded.PasswordHash));
+    }
+
+    [Fact]
+    public async Task UpdateRoleAsync_改名与权限_生效()
+    {
+        var db = CreateDbContext();
+        var role = new Role { Code = "R1", Name = "旧名" };
+        var perm = new Permission { Code = "route.inbound", Name = "入库", Category = PermissionCategory.ROUTE, ModuleCode = "inbound" };
+        db.Roles.Add(role);
+        db.Permissions.Add(perm);
+        await db.SaveChangesAsync();
+        var service = CreateAuthService(db);
+
+        var result = await service.UpdateRoleAsync(role.Id, new("新名", new List<string> { "route.inbound" }));
+
+        Assert.Equal("新名", result.Name);
+        Assert.Contains("route.inbound", result.PermissionCodes);
+    }
+
+    [Fact]
+    public async Task AssignPermissionsAsync_更新权限点_生效()
+    {
+        var db = CreateDbContext();
+        var role = new Role { Code = "R1", Name = "角色" };
+        db.Roles.Add(role);
+        await db.SaveChangesAsync();
+        var service = CreateAuthService(db);
+
+        var result = await service.AssignPermissionsAsync(role.Id, new AssignPermissionsRequest(new List<string>()));
+
+        Assert.Empty(result.PermissionCodes);
+    }
+
+    [Fact]
+    public async Task ListUsersAsync_分页与默认排序_生效()
+    {
+        var db = CreateDbContext();
+        var hasher = new Argon2PasswordHasher();
+        db.Users.AddRange(
+            new User { Username = "b_user", Name = "乙", PasswordHash = hasher.Hash("x") },
+            new User { Username = "a_user", Name = "甲", PasswordHash = hasher.Hash("x") });
+        await db.SaveChangesAsync();
+        var service = CreateAuthService(db);
+
+        var result = await service.ListUsersAsync(null, null, null, null, 1, 10);
+
+        Assert.Equal(2, result.Total);
+        Assert.Equal("a_user", result.Items[0].Username); // 默认 username asc
+    }
+
+    [Fact]
+    public async Task GetRoleAsync_不存在_抛404()
+    {
+        var db = CreateDbContext();
+        var service = CreateAuthService(db);
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => service.GetRoleAsync(Guid.NewGuid()));
+        Assert.Equal("ROLE_NOT_FOUND", ex.Code);
+        Assert.Equal(404, ex.StatusCode);
     }
 }
 

@@ -7,8 +7,8 @@ using Microsoft.EntityFrameworkCore;
 namespace AWms.IntegrationTests;
 
 /// <summary>编号服务 PG 实跑：原子自增 / 并发取号 / 耗尽 / 格式（复验意见 B-03，不 Skip）。</summary>
-[Collection("PostgreSql")]
-public class NumberingIntegrationTests
+// 每个测试类一个容器实例（规范 §5.4），避免跨类数据污染
+public class NumberingIntegrationTests : IClassFixture<PostgreSqlFixture>
 {
     private readonly PostgreSqlFixture _fixture;
 
@@ -93,4 +93,6 @@ public class NumberingIntegrationTests
         Assert.All(results, r => Assert.Matches(@"^IMP-\d{8}-\d{4}$", r));
     }
 }
+
+
 

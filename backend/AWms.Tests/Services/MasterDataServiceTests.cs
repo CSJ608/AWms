@@ -360,4 +360,123 @@ public class MasterDataServiceTests
         Assert.Equal("VALIDATION_ERROR", ex.Code);
         Assert.Equal(400, ex.StatusCode);
     }
+    [Fact]
+    public async Task UpdateMaterialAsync_更新字段_生效()
+    {
+        var db = CreateDb();
+        var m = new Material { Code = "MAT-001", Name = "旧名", LabelType = LabelType.NONE, DefaultUom = "CT" };
+        db.Materials.Add(m);
+        await db.SaveChangesAsync();
+        var service = new MasterDataService(db, new QueryService());
+
+        var result = await service.UpdateMaterialAsync(m.Id, new("新名", "SC", true, "SKU", "CT", "20.0000", "ENABLED"));
+
+        Assert.Equal("新名", result.Name);
+        Assert.Equal("SKU", result.LabelType);
+        Assert.Equal("20.0000", result.DefaultQtyPerLabel);
+    }
+
+    [Fact]
+    public async Task UpdateMaterialAsync_不存在_抛404()
+    {
+        var db = CreateDb();
+        var service = new MasterDataService(db, new QueryService());
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.UpdateMaterialAsync(Guid.NewGuid(), new("名", null, false, "NONE", "CT", null, "ENABLED")));
+        Assert.Equal("MATERIAL_NOT_FOUND", ex.Code);
+        Assert.Equal(404, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateWarehouseAsync_更新_生效()
+    {
+        var db = CreateDb();
+        var w = new Warehouse { Code = "WH-01", Name = "旧名" };
+        db.Warehouses.Add(w);
+        await db.SaveChangesAsync();
+        var service = new MasterDataService(db, new QueryService());
+
+        var result = await service.UpdateWarehouseAsync(w.Id, new("新仓名", "XC", "DISABLED"));
+
+        Assert.Equal("新仓名", result.Name);
+        Assert.Equal("DISABLED", result.Status);
+    }
+
+    [Fact]
+    public async Task UpdateLocationAsync_更新_生效()
+    {
+        var db = CreateDb();
+        var wh = new Warehouse { Code = "WH-01", Name = "仓" };
+        db.Warehouses.Add(wh);
+        var loc = new Location { WarehouseId = wh.Id, Code = "STG-01", Type = LocationType.STAGING };
+        db.Locations.Add(loc);
+        await db.SaveChangesAsync();
+        var service = new MasterDataService(db, new QueryService());
+
+        var result = await service.UpdateLocationAsync(loc.Id, new("DEFAULT", "SC", "ENABLED"));
+
+        Assert.Equal("DEFAULT", result.Type);
+        Assert.Equal("SC", result.SearchCode);
+    }
+
+    [Fact]
+    public async Task UpdateSourceAsync_更新_生效()
+    {
+        var db = CreateDb();
+        var s = new Source { Type = SourceType.SUPPLIER, Code = "SUP-001", Name = "旧名" };
+        db.Sources.Add(s);
+        await db.SaveChangesAsync();
+        var service = new MasterDataService(db, new QueryService());
+
+        var result = await service.UpdateSourceAsync(s.Id, new("新来源", "SC", "DISABLED"));
+
+        Assert.Equal("新来源", result.Name);
+        Assert.Equal("DISABLED", result.Status);
+    }
+
+    [Fact]
+    public async Task DeleteMaterialAsync_无引用_删除成功()
+    {
+        var db = CreateDb();
+        var m = new Material { Code = "MAT-001", Name = "物料" };
+        db.Materials.Add(m);
+        await db.SaveChangesAsync();
+        var service = new MasterDataService(db, new QueryService());
+
+        await service.DeleteMaterialAsync(m.Id);
+
+        Assert.Equal(0, await db.Materials.CountAsync());
+    }
+
+    [Fact]
+    public async Task DeleteWarehouseAsync_无库位_删除成功()
+    {
+        var db = CreateDb();
+        var w = new Warehouse { Code = "WH-01", Name = "仓" };
+        db.Warehouses.Add(w);
+        await db.SaveChangesAsync();
+        var service = new MasterDataService(db, new QueryService());
+
+        await service.DeleteWarehouseAsync(w.Id);
+
+        Assert.Equal(0, await db.Warehouses.CountAsync());
+    }
+
+    [Fact]
+    public async Task GetBatchAsync_返回详情()
+    {
+        var db = CreateDb();
+        var m = new Material { Code = "MAT-001", Name = "物料" };
+        db.Materials.Add(m);
+        var b = new Batch { MaterialId = m.Id, MaterialCode = "MAT-001", BatchNo = "260810001" };
+        db.Batches.Add(b);
+        await db.SaveChangesAsync();
+        var service = new MasterDataService(db, new QueryService());
+
+        var result = await service.GetBatchAsync(b.Id);
+
+        Assert.NotNull(result);
+        Assert.Equal("260810001", result!.BatchNo);
+    }
 }

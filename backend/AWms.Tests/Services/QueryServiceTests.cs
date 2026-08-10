@@ -327,9 +327,12 @@ public class QueryServiceTests
         var (_, result) = await service.ApplyAsync(
             db.Materials.AsNoTracking(), request, MaterialFields, MaterialSorts, "code", "asc");
 
-        // id DESC 兜底：两个 A 中后插入（id 更大）在前
-        Assert.Equal(m2.Id, result.Items[0].Id);
-        Assert.Equal(m1.Id, result.Items[1].Id);
+        // id DESC 兜底：两个 A 中 id 较大者在前（InMemory 不保证插入序=id 序，只断言兜底语义）
+        Assert.Equal("A", result.Items[0].Code);
+        Assert.Equal("A", result.Items[1].Code);
+        Assert.True(result.Items[0].Id.CompareTo(result.Items[1].Id) > 0, "同值字段按 id DESC 兜底");
+        Assert.Equal("B", result.Items[2].Code);
     }
 }
+
 

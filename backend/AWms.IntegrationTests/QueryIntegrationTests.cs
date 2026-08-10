@@ -9,8 +9,8 @@ using Microsoft.EntityFrameworkCore;
 namespace AWms.IntegrationTests;
 
 /// <summary>filter DSL 在真实 PostgreSQL 上的翻译验证（Npgsql 参数化 + 操作符语义）。</summary>
-[Collection("PostgreSql")]
-public class QueryIntegrationTests
+// 每个测试类一个容器实例（规范 §5.4），避免跨类数据污染
+public class QueryIntegrationTests : IClassFixture<PostgreSqlFixture>
 {
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
     private static readonly HashSet<string> MaterialFields = new(StringComparer.Ordinal) { "code", "name", "searchCode", "batchControlled", "labelType", "defaultUom", "defaultQtyPerLabel", "status", "createdAt", "updatedAt" };
@@ -36,7 +36,7 @@ public class QueryIntegrationTests
     public async Task Apply_真实PG_操作符全集()
     {
         await using var db = CreateDb();
-        var prefix = Guid.CreateVersion7().ToString("N")[..8];
+        var prefix = Guid.CreateVersion7().ToString("N");
         db.Materials.AddRange(
             new Material { Code = $"{prefix}-01", Name = "螺母 M6", SearchCode = "LM", Status = MaterialStatus.ENABLED, BatchControlled = true, DefaultQtyPerLabel = 10m, CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc) },
             new Material { Code = $"{prefix}-02", Name = "螺栓 M8", SearchCode = null, Status = MaterialStatus.DISABLED, BatchControlled = false, DefaultQtyPerLabel = 5m, CreatedAt = new DateTime(2026, 8, 10, 0, 0, 0, DateTimeKind.Utc) },
@@ -66,4 +66,7 @@ public class QueryIntegrationTests
         Assert.Equal(2, nested.Result.Total);
     }
 }
+
+
+
 
