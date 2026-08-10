@@ -1,6 +1,6 @@
 # API 契约导航与通用规范（已定稿 v1.3）
 
-> 状态：**已定稿 v1.4（2026-08-10，用户确认）**。前后端唯一依据；变更走评审（先改契约再改实现）。
+> 状态：**已定稿 v1.5（2026-08-10，用户确认）**。前后端唯一依据；变更走评审（先改契约再改实现）。
 
 ## 一、导航（docs/api/）
 
@@ -114,7 +114,18 @@
 
 **前端**：筛选 UI 由 `SearchField[]` 元数据驱动（字段/控件类型/选项源/操作符），映射为固定参数或 filter DSL。
 
-**本期实现范围**：通用 QueryParser（字段白名单 + 操作符白名单 + 参数化）作为平台能力，主要列表（物料/库存/流水/入库单）启用；其余接口按需启用。
+**本期实现范围**：通用 QueryParser（字段白名单 + 操作符白名单 + 参数化）+ 运行时元数据端点（GET /api/meta/fields/{resource}）作为平台能力，主要列表（物料/库存/流水/入库单）启用；其余接口按需启用。
+
+**字段元数据（FieldMeta，2026-08-10 确认）**：
+
+- 每个列表接口声明可筛选字段的元数据：`field / labelKey / type / operators / options?`。
+- `type`：string / number / decimal / date / datetime / bool / enum / uuid / ref（ref 带 `refResource`，如 materials/warehouses）。
+- `options`：枚举字段提供 `[{ value, labelKey }]`；ref 字段由引用资源提供选项。
+- 操作符按类型给默认集（string: eq/contains/startsWith/in；number/decimal: 比较+between；enum: eq/in/neq；date/datetime: 比较+between；bool: eq；uuid/ref: eq/in）。
+- **前端控件由 type 推导**：string→文本框；enum→下拉；bool→开关；number/decimal→数字输入（可区间）；date/datetime→日期选择器（可区间）；ref→引用选择器。
+- **来源**：① 契约文档内定义（各接口字段元数据表）；② **运行时元数据端点 `GET /api/meta/fields/{resource}`**（推荐本期实现，返回 FieldMeta[]，前端动态渲染筛选区，新增字段自动生效）。
+
+
 
 ## 三、修订记录
 
@@ -128,3 +139,4 @@
 | 2026-08-10 | v1.2：规则注册属性；批次号 YYMMDD+3 位 |
 | 2026-08-10 | v1.3：编号设计原则（前缀为人/内部号无前缀/规则可插拔）；事务组号 15 位；批量分配与复合规则扩展点 |
 | 2026-08-10 | v1.4：新增 2.10 查询与筛选规范（固定参数 + filter DSL + sort 白名单） |
+| 2026-08-10 | v1.5：2.10 增加字段元数据 FieldMeta（type/operators/options）+ 运行时元数据端点 |
