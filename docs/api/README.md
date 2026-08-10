@@ -1,6 +1,6 @@
 # API 契约导航与通用规范（已定稿 v1.3）
 
-> 状态：**已定稿 v1.6（2026-08-10，用户确认）**。前后端唯一依据；变更走评审（先改契约再改实现）。
+> 状态：**已定稿 v1.7（2026-08-10，用户确认）**。前后端唯一依据；变更走评审（先改契约再改实现）。
 
 ## 一、导航（docs/api/）
 
@@ -127,6 +127,20 @@
 
 
 
+**ref（引用）字段的交互模式（2026-08-10 确认）**：
+
+- FieldMeta 中 `type=ref` + `refResource`（如 materials / warehouses / batches）。
+- 前端提供**通用引用选择器（ReferencePicker）**，所有 ref 字段共用，不写死具体资源：
+  1. **快捷搜索**：文本框输入 keyword（匹配该资源"搜索字段集"），防抖调 `GET /api/{refResource}?keyword=&pageSize=10`，下拉候选，选中返回 id；
+  2. **完整选择弹窗**：打开引用资源的标准列表弹窗（分页+筛选+排序，复用该资源字段元数据与 filter DSL），搜索选择后返回。
+- 引用资源需提供：轻量搜索（keyword 参数）+ 标准列表接口（已具备）。
+
+**引用实体规则（2026-08-10 确认）**：
+
+- 凡作为 ref 选择器目标的实体，契约**必须提供 `keyword` 搜索**；建议提供可选 `searchCode`（助记码），`keyword` 匹配 code/name/searchCode。
+- 无需助记的实体用自然编码纳入 keyword：批次=batchNo、用户=username/name、入库单/收货单=orderNo/receiptNo。
+- 本期带 searchCode 的实体：物料 / 仓库 / 库位 / 来源（供应商·车间）。
+
 ## 三、修订记录
 
 | 日期 | 变更 |
@@ -141,3 +155,4 @@
 | 2026-08-10 | v1.4：新增 2.10 查询与筛选规范（固定参数 + filter DSL + sort 白名单） |
 | 2026-08-10 | v1.5：2.10 增加字段元数据 FieldMeta（type/operators/options）+ 运行时元数据端点 |
 | 2026-08-10 | v1.6：ref 字段交互模式（通用 ReferencePicker：快捷搜索+完整弹窗）+ keyword 约定 |
+| 2026-08-10 | v1.7：引用实体规则（keyword 必提供；searchCode 建议提供；无需助记实体用自然编码） |
