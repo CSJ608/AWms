@@ -33,10 +33,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<NumberingService>();
         services.AddScoped<IQueryService, QueryService>();
         services.AddScoped<MasterDataService>();
+        services.AddScoped<INumberService>(sp => sp.GetRequiredService<NumberingService>());
+        services.AddScoped<ImportExportService>();
         services.AddScoped<AdminSeedService>();
 
         return services;
     }
 }
+
 
 
