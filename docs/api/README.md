@@ -113,6 +113,13 @@
 - 请求：`sort=[{"field":"totalQty","dir":"desc"}]`；field 必须在白名单内、dir ∈ asc/desc，否则 400；
 - 默认排序由各接口定义（如 occurredAt desc）。
 
+**传输约定（v1.9，2026-08-10 用户裁决）**：
+- **标准列表查询统一走 POST /api/{resource}/search**（body JSON：{ keyword?, 固定参数..., filter?, sort?, page?, pageSize? }）；GET 的 query string 不适合复杂 JSON filter/sort，避免再出现"GET+body"这类歧义实现。
+- GET /api/{resource}?keyword=&pageSize= 仅保留为**引用选择器快捷搜索**（轻量，pageSize≤10）。
+- GET /api/{resource}/{id} 详情不变。
+- 嵌套列表（如 /api/warehouses/{id}/locations）同样：POST .../locations/search 为标准查询；GET .../locations?keyword= 为快捷搜索。
+- 前端列表页/高级筛选一律调 POST /search；引用选择器快捷搜索可继续用 GET keyword。
+
 **前端**：筛选 UI 由 `SearchField[]` 元数据驱动（字段/控件类型/选项源/操作符），映射为固定参数或 filter DSL。
 
 **本期实现范围**：通用 QueryParser（字段白名单 + 操作符白名单 + 参数化）+ 运行时元数据端点（GET /api/meta/fields/{resource}）作为平台能力，主要列表（物料/库存/流水/入库单）启用；其余接口按需启用。
@@ -158,3 +165,4 @@
 | 2026-08-10 | v1.6：ref 字段交互模式（通用 ReferencePicker：快捷搜索+完整弹窗）+ keyword 约定 |
 | 2026-08-10 | v1.7：引用实体规则（keyword 必提供；searchCode 建议提供；无需助记实体用自然编码） |
 | 2026-08-10 | v1.8：Idempotency-Key 实现约定；filter DSL 固化（in/notIn 数组、between 日期边界、sort 单列） |
+| 2026-08-10 | v1.9：列表查询传输约定——标准查询 POST /api/{resource}/search，GET keyword 仅作快捷搜索（用户裁决） |
