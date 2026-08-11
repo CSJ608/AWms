@@ -3,7 +3,7 @@
  * 占位页（/、/inbound、/system）包 AppLayout，从菜单进入后保留侧边栏导航，不再死胡同。
  */
 import { describe, expect, it } from 'vitest'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderApp, renderAuthed } from '@/test/utils'
 
