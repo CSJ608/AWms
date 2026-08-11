@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -9,20 +9,23 @@ using AWms.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Services
-builder.Services.AddControllers(options => options.Filters.Add<AWms.Api.Middleware.IdempotencyFilter>());
-builder.Services.AddOpenApi();
-builder.Services.AddInfrastructure(builder.Configuration);
-
-// JWT Authentication（SecretKey 走环境变量/user-secrets，appsettings 只留占位）
+// JWT 密钥单一来源（修复 Q6）：优先 Jwt:SecretKey，否则 AWMS_JWT_SECRET；
+// 解析后回填到配置，AddInfrastructure（JwtOptions 绑定）与 JwtBearer 共用同一密钥。
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var secretKey = string.IsNullOrWhiteSpace(jwtSection["SecretKey"])
     ? builder.Configuration["AWMS_JWT_SECRET"]
     : jwtSection["SecretKey"];
 if (string.IsNullOrWhiteSpace(secretKey))
     throw new InvalidOperationException("Jwt:SecretKey / AWMS_JWT_SECRET 未配置：密钥禁止写入 git，请通过环境变量或 user-secrets 注入。");
+builder.Configuration["Jwt:SecretKey"] = secretKey;
 var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
 
+// Services
+builder.Services.AddControllers(options => options.Filters.Add<AWms.Api.Middleware.IdempotencyFilter>());
+builder.Services.AddOpenApi();
+builder.Services.AddInfrastructure(builder.Configuration);
+
+// JWT Authentication（SecretKey 走环境变量/user-secrets，appsettings 只留占位）
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -95,6 +98,3 @@ app.MapControllers();
 app.Run();
 
 public partial class Program { }
-
-
-

@@ -1,4 +1,4 @@
-﻿using AWms.Api;
+using AWms.Api;
 using AWms.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -33,6 +33,9 @@ public sealed class ApiTestFixture : IAsyncLifetime
     public const string JwtSecret = "ApiTestSecretKey-MustBeAtLeast32Chars!-2026";
 
     public WebApplicationFactory<Program> Factory { get; private set; } = null!;
+
+    /// <summary>当前夹具容器的连接串（供同库独立 WebApplicationFactory 复用，如 Q6 仅 AWMS_JWT_SECRET 测试）。</summary>
+    public string ContainerConnectionString => _container.GetConnectionString();
 
     public async Task InitializeAsync()
     {
