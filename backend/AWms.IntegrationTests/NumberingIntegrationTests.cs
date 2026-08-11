@@ -1,4 +1,4 @@
-﻿using AWms.Domain.Entities;
+using AWms.Domain.Entities;
 using AWms.Domain.Enums;
 using AWms.Infrastructure.Data;
 using AWms.Infrastructure.Services;
@@ -47,8 +47,9 @@ public class NumberingIntegrationTests : IClassFixture<PostgreSqlFixture>
 
         var n1 = await service.NextAsync(type);
         var n2 = await service.NextAsync(type);
-        Assert.Equal("T-20260810-1", n1);
-        Assert.Equal("T-20260810-2", n2);
+        var today = DateTime.UtcNow.ToString("yyyyMMdd");
+        Assert.Equal($"T-{today}-1", n1);
+        Assert.Equal($"T-{today}-2", n2);
 
         var ex = await Assert.ThrowsAsync<DomainException>(() => service.NextAsync(type));
         Assert.Equal("NUMBER_EXHAUSTED", ex.Code);
