@@ -22,6 +22,8 @@ export const mockState = {
   /** 刷新端点被调用次数（401 单飞刷新测试断言用） */
   refreshCount: 0,
   tokensInvalidated: false,
+  /** 刷新轮次（签发新 token 的 nonce，F-01 恢复链路守门用） */
+  tokenSeq: 0,
 }
 
 /** 使所有 mock token 失效（模拟服务端会话过期），调用刷新后恢复 */
@@ -32,6 +34,7 @@ export function invalidateMockTokens(on: boolean): void {
 export function resetMockState(): void {
   mockState.refreshCount = 0
   mockState.tokensInvalidated = false
+  mockState.tokenSeq = 0
 }
 
 const mockDelay = () => delay(import.meta.env.MODE === 'test' ? 0 : 80)
@@ -42,12 +45,14 @@ const fail = (code: string, message: string, status: number) =>
   HttpResponse.json({ code, message, data: null }, { status })
 
 // ── 认证 ──────────────────────────────────────────────
+/** token 形如 mock-token-<username>[#<刷新轮次>]：刷新签发新 token（对齐真实后端每次
+ * refresh 换发新 token），# 后 nonce 仅用于区分轮次，解析用户名时剥掉。 */
 function tokenUsername(req: Request): string | null {
   const h = req.headers.get('Authorization')
   if (!h?.startsWith('Bearer ')) return null
   const token = h.slice(7)
   if (token === MOCK_EXPIRED_TOKEN || !token.startsWith(MOCK_TOKEN_PREFIX)) return null
-  return token.slice(MOCK_TOKEN_PREFIX.length)
+  return token.slice(MOCK_TOKEN_PREFIX.length).split('#')[0]
 }
 
 /** 受保护端点鉴权：无效/已失效 token → 401 envelope */
@@ -155,11 +160,12 @@ export const handlers = [
     mockState.refreshCount += 1
     const username = tokenUsername(request)
     if (!username) return fail('UNAUTHORIZED', '未登录或会话已过期', 401)
-    // 刷新视为会话续期：恢复 token 有效性
+    // 刷新视为会话续期：恢复 token 有效性 + 换发新 token（对齐真实后端每次 refresh 新签发）
     mockState.tokensInvalidated = false
+    mockState.tokenSeq += 1
     const user = findUser(username)
     return ok({
-      token: `${MOCK_TOKEN_PREFIX}${username}`,
+      token: `${MOCK_TOKEN_PREFIX}${username}#${mockState.tokenSeq}`,
       expiresAt: new Date(Date.now() + 2 * 3600_000).toISOString(),
       user: user ?? undefined,
     })
@@ -174,7 +180,9 @@ export const handlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (auth instanceof HttpResponse) return auth
-    return ok(buildLoginResponse((auth as { user: UserItem }).user))
+    // /auth/me 回显请求头中的当前 token（对齐真实后端：契约约定 me 返回当前请求 token）
+    const token = request.headers.get('Authorization')?.slice(7) ?? ''
+    return ok({ ...buildLoginResponse((auth as { user: UserItem }).user), token })
   }),
 
   // 运行时字段元数据

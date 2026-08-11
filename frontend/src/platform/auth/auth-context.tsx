@@ -40,9 +40,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     apiMe()
       .then((me: LoginResponse) => {
         if (cancelled) return
+        // 会话恢复：token/expiresAt 以 /auth/me 返回的当前 token 为准（后端返回请求头中
+        // 的 token；恢复链路可能已 401→refresh→重放，旧 cached.token 已失效，回写会导致
+        // 后续请求再次 401/refresh——验收 F-01）。
         const next: StoredSession = {
-          token: cached.token,
-          expiresAt: cached.expiresAt,
+          token: me.token,
+          expiresAt: me.expiresAt,
           user: me.user,
           permissions: me.permissions,
           menus: me.menus,
