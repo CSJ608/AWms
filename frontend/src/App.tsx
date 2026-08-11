@@ -33,12 +33,10 @@ function WebIndexRedirect() {
 }
 
 
-/** 根路径：未登录 → /login；已登录 → 工作台占位页（工作台本期未实现，不再回跳主数据/404） */
-function RootRoute() {
-  const { status } = useAuth()
-  if (status === 'loading') return null
-  if (status !== 'authed') return <Navigate to='/login' replace />
-  return <ModulePlaceholderPage titleKey='nav.workspace' />
+/** 根路径与未实现模块（工作台/入库/系统）：AppLayout 布局内占位页（验收 F-02：
+ * 从菜单进入占位页后保留侧边栏导航与顶部登出，不再死胡同；未登录仍走 RequireAuth → /login）。 */
+function PlaceholderRoute({ titleKey }: { titleKey: string }) {
+  return <ModulePlaceholderPage titleKey={titleKey} />
 }
 
 function NotFoundPage() {
@@ -55,9 +53,12 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/" element={<RootRoute />} />
-      <Route path="/inbound" element={<RequireAuth><ModulePlaceholderPage titleKey="nav.inbound" /></RequireAuth>} />
-      <Route path="/system" element={<RequireAuth><ModulePlaceholderPage titleKey="nav.system" /></RequireAuth>} />
+      {/* 未实现模块（工作台/入库/系统）：AppLayout 内占位页（保留侧边栏 + 顶部登出） */}
+      <Route path="/" element={<RequireAuth><AppLayout /></RequireAuth>}>
+        <Route index element={<PlaceholderRoute titleKey="nav.workspace" />} />
+        <Route path="inbound" element={<PlaceholderRoute titleKey="nav.inbound" />} />
+        <Route path="system" element={<PlaceholderRoute titleKey="nav.system" />} />
+      </Route>
       <Route path="/master-data" element={<Navigate to="/web/master/materials" replace />} />
 
       {/* Web 后台（RequireAuth 布局） */}
