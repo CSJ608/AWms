@@ -21,6 +21,7 @@ export default {
     expand: 'Expand',
     retry: 'Retry',
     back: 'Back',
+    developing: 'Module under development',
     loading: 'Loading…',
     total: '{{total}} in total',
     filtered: '{{count}} matched',
