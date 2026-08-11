@@ -1,4 +1,4 @@
-﻿using AWms.Domain.Dtos.Common;
+using AWms.Domain.Dtos.Common;
 using System.Text.Json;
 
 namespace AWms.Api.Middleware;
@@ -26,7 +26,7 @@ public class ExceptionHandlerMiddleware
             context.Response.StatusCode = ex.StatusCode;
             context.Response.ContentType = "application/json; charset=utf-8";
             var response = ApiResponse.Error<object>(ex.Code, ex.Message);
-            await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+            await context.Response.WriteAsync(JsonSerializer.Serialize(response, ApiJsonOptions.Serializer));
         }
         catch (Exception ex)
         {
@@ -34,7 +34,7 @@ public class ExceptionHandlerMiddleware
             context.Response.StatusCode = 500;
             context.Response.ContentType = "application/json; charset=utf-8";
             var response = ApiResponse.Error<object>("INTERNAL_ERROR", "服务器内部错误");
-            await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+            await context.Response.WriteAsync(JsonSerializer.Serialize(response, ApiJsonOptions.Serializer));
         }
     }
 }

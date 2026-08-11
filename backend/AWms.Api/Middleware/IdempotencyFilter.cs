@@ -1,6 +1,5 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Text.Json;
-using System.Text.Encodings.Web;
 using AWms.Domain.Dtos.Common;
 using AWms.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -19,12 +18,6 @@ public class IdempotencyFilter : IAsyncActionFilter
     private static readonly TimeSpan Ttl = TimeSpan.FromHours(24);
     private static readonly TimeSpan MaxWaitForFirst = TimeSpan.FromSeconds(15);
 
-    private static readonly JsonSerializerOptions JsonOpts = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping // 与 MVC 输出一致（保留非 ASCII 字面量）
-    };
 
     private readonly IdempotencyService _service;
     private readonly ILogger<IdempotencyFilter> _logger;
@@ -95,7 +88,7 @@ public class IdempotencyFilter : IAsyncActionFilter
 
             if (executed.Exception is DomainException dex)
             {
-                var json = JsonSerializer.Serialize(ApiResponse.Error<object>(dex.Code, dex.Message), JsonOpts);
+                var json = JsonSerializer.Serialize(ApiResponse.Error<object>(dex.Code, dex.Message), ApiJsonOptions.Serializer);
                 await _service.CompleteAsync(key, dex.StatusCode, json, context.HttpContext.RequestAborted);
                 executed.ExceptionHandled = true;
                 executed.Result = new ContentResult
@@ -107,7 +100,7 @@ public class IdempotencyFilter : IAsyncActionFilter
             }
             else if (executed.Result is ObjectResult { Value: not null } obj)
             {
-                var json = JsonSerializer.Serialize(obj.Value, JsonOpts);
+                var json = JsonSerializer.Serialize(obj.Value, ApiJsonOptions.Serializer);
                 var status = obj.StatusCode ?? StatusCodes.Status200OK;
                 await _service.CompleteAsync(key, status, json, context.HttpContext.RequestAborted);
             }
