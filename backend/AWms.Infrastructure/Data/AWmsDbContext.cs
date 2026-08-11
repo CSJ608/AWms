@@ -349,10 +349,10 @@ public class AWmsDbContext : DbContext
         // Menus（固定 GUID 2000…）
         modelBuilder.Entity<MenuDefinition>().HasData(
             new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000001"), Code = "menu.dashboard", TitleKey = "nav.workspace", GroupKey = "nav.group.workspace", ModuleCode = "dashboard", IconKey = "home", Path = "/", Surface = Surface.WEB, Sort = 10 },
-            new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000002"), Code = "menu.inbound", TitleKey = "nav.inbound", GroupKey = "nav.group.operations", ModuleCode = "inbound", IconKey = "inbox", Path = "/inbound", Surface = Surface.WEB, Sort = 20 },
-            new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000003"), Code = "menu.master-data", TitleKey = "nav.master-data", GroupKey = "nav.group.settings", ModuleCode = "master-data", IconKey = "database", Path = "/master-data", Surface = Surface.WEB, Sort = 30 },
-            new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000004"), Code = "menu.system", TitleKey = "nav.system", GroupKey = "nav.group.settings", ModuleCode = "system", IconKey = "settings", Path = "/system", Surface = Surface.WEB, Sort = 40 },
-            new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000005"), Code = "pda.receiving", TitleKey = "pda.receiving", ModuleCode = "inbound", Sort = 10, Surface = Surface.PDA }
+            new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000002"), Code = "menu.inbound", TitleKey = "nav.inbound", GroupKey = "nav.group.operations", ModuleCode = "inbound", IconKey = "inbox", Path = "/inbound", Surface = Surface.WEB, Sort = 20, RequiredPermissionCode = "route.inbound" },
+            new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000003"), Code = "menu.master-data", TitleKey = "nav.master-data", GroupKey = "nav.group.settings", ModuleCode = "master-data", IconKey = "database", Path = "/master-data", Surface = Surface.WEB, Sort = 30, RequiredPermissionCode = "route.master-data" },
+            new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000004"), Code = "menu.system", TitleKey = "nav.system", GroupKey = "nav.group.settings", ModuleCode = "system", IconKey = "settings", Path = "/system", Surface = Surface.WEB, Sort = 40, RequiredPermissionCode = "route.system" },
+            new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000005"), Code = "pda.receiving", TitleKey = "pda.receiving", ModuleCode = "inbound", Sort = 10, Surface = Surface.PDA, RequiredPermissionCode = "route.inbound" }
         );
     }
 }
