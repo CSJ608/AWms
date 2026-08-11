@@ -68,6 +68,13 @@ public class MetaController : ControllerBase
                 new("status", "field.status", "enum", new() { "eq", "in" }, Options: new() { new("ACTIVE", "status.active"), new("CLOSED", "status.closed") }),
                 new("createdAt", "field.createdAt", "datetime", new() { "eq", "gt", "gte", "lt", "lte", "between" }),
             },
+            "users" => new List<FieldMeta>
+            {
+                new("username", "field.username", "string", new() { "eq", "contains", "startsWith", "in" }),
+                new("name", "field.name", "string", new() { "eq", "contains", "startsWith", "in" }),
+                new("status", "field.status", "enum", new() { "eq", "in" }, Options: new() { new("ACTIVE", "status.active"), new("DISABLED", "status.disabled") }),
+                new("createdAt", "field.createdAt", "datetime", new() { "eq", "gt", "gte", "lt", "lte", "between" }),
+            },
             _ => new List<FieldMeta>()
         };
 
