@@ -96,8 +96,12 @@ pnpm dev                       # http://localhost:5173，/api 由 vite proxy 转
 | test | 模拟生产 + 联调 | CI 绿 → self-hosted 自动部署 | web 8082 / api 5081 / db 5434 |
 | prod | 正式使用 | **人工确认**后部署 | 待定 |
 
+
+> **仓库可见性（2026-08-11 用户确认）**：CSJ608/AWms 为**公开仓库（测试性质）**。deploy/.env.example 中的默认口令/密钥仅为测试环境占位，**禁止**在其中放入生产凭据；正式使用前必须改口令并把仓库设为私有（或改用 GitHub Secrets）。main 已启用分支保护（要求 PR + backend/frontend 状态检查 + 禁直接 push）。
+
 ## 七、变更记录
 
 | 日期 | 变更 |
 |---|---|
 | 2026-08-11 | 初始版本：环境约束 / 本地开发 / CI/CD 管道 / runner / 测试环境 / 部署纪律 |
+| 2026-08-11 | 仓库转公开（测试性质）+ main 分支保护启用（PR + backend/frontend 状态检查） |
