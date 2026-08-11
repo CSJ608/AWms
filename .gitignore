@@ -32,3 +32,6 @@ Thumbs.db
 # NuGet workspace cache
 backend/.nuget-packages/
 
+
+# 验收测试本地附件（不入库，见验收指令）
+验收附件/
