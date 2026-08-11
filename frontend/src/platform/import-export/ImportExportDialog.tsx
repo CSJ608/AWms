@@ -236,7 +236,7 @@ export function ImportExportDialog({
           <div className="flex flex-wrap gap-x-4 gap-y-1 border-t pt-2 text-xs text-muted-foreground">
             <span>{t('importExport.taskNo')}: <span className="tabular-nums">{task.taskNo}</span></span>
             <span>{t('importExport.fileName')}: {task.fileName}</span>
-            <span>{t('importExport.status')}: {enumLabelKey('importTaskStatus', task.status) ?? task.status}</span>
+            <span>{t('importExport.status')}: {t(enumLabelKey('importTaskStatus', task.status) ?? task.status)}</span>
             {task.failReportUrl && (
               <button
                 type="button"

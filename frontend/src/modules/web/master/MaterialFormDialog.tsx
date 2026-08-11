@@ -4,7 +4,7 @@
  */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -65,9 +65,16 @@ export function MaterialFormDialog({ open, editing, onOpenChange, onSaved }: Mat
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    values: useMemo<FormValues>(() => {
-      if (editing) {
-        return {
+    defaultValues: DEFAULT_VALUES,
+  })
+
+  // 打开时按 新建/编辑 重置为对应初值（验收⑥：新建不保留上次输入；编辑回填不串；
+  // 用显式 reset 而非 values prop——values 对内容相同的新对象做深比较不触发 reset，
+  // 且对话框关闭时内容不卸载，表单状态会跨次打开残留）
+  useEffect(() => {
+    if (!open) return
+    form.reset(editing
+      ? {
           code: editing.code,
           name: editing.name,
           searchCode: editing.searchCode ?? '',
@@ -77,10 +84,8 @@ export function MaterialFormDialog({ open, editing, onOpenChange, onSaved }: Mat
           defaultQtyPerLabel: editing.defaultQtyPerLabel ?? '',
           status: editing.status,
         }
-      }
-      return { ...DEFAULT_VALUES }
-    }, [editing, open]),
-  })
+      : { ...DEFAULT_VALUES })
+  }, [open, editing, form])
 
   const mutation = useMutation({
     mutationFn: (v: FormValues): Promise<unknown> => {
