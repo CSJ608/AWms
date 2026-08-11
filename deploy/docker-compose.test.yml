@@ -1,0 +1,54 @@
+# 测试环境编排（test）—— AWms，self-hosted runner 执行
+# 用法：cp deploy/.env.example deploy/.env && 修改口令
+#       docker compose -f deploy/docker-compose.test.yml up -d --build
+# 端口：db 5434 / api 5081 / web 8082（避开 MWms 的 5433/5080/8081）
+# 说明：api 启动即 MigrateAsync（自动应用迁移）+ 初始管理员初始化（Admin__* 环境变量）
+name: awms-test
+
+services:
+  db:
+    image: docker.m.daocloud.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-awms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-awms_test}
+    ports:
+      - "${DB_PORT:-5434}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-awms} -d $${POSTGRES_DB:-awms_test}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: awms-api:test
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB:-awms_test};Username=${POSTGRES_USER:-awms};Password=${POSTGRES_PASSWORD:-change-me}
+      Jwt__SecretKey: ${JWT_SECRET:-AWms-Dev-SecretKey-ChangeInProduction-Min32Chars!}
+      Admin__Username: ${ADMIN_USERNAME:-admin}
+      Admin__Password: ${ADMIN_PASSWORD:-change-me}
+      Admin__ResetOnStartup: "true"
+    ports:
+      - "${API_PORT:-5081}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    image: awms-web:test
+    ports:
+      - "${WEB_PORT:-8082}:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

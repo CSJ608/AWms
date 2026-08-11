@@ -1,0 +1,90 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: 后端 · dotnet build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore + Build (含 NuGet 审计)
+        run: dotnet build backend/AWms.slnx --configuration Release
+      - name: Test (单元 + 集成, Testcontainers PostgreSQL)
+        run: dotnet test backend/AWms.slnx --configuration Release --no-build
+      - name: 上传测试结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: "**/TestResults/*.trx"
+          if-no-files-found: ignore
+
+  frontend:
+    name: 前端 · pnpm lint + build + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Build
+        run: pnpm build
+      - name: Test
+        run: pnpm test
+      - name: 上传前端构建产物 (供 deploy-test 打镜像)
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+
+  deploy-test:
+    name: 部署测试环境 (self-hosted)
+    needs: [backend, frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: [self-hosted, awms-test]
+    concurrency:
+      group: deploy-awms-test
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare deploy/.env
+        run: |
+          if (-not (Test-Path "deploy/.env")) {
+            Copy-Item "deploy/.env.example" "deploy/.env"
+          }
+      - name: Download frontend dist (built by GitHub CI)
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+      - name: Build and start test stack
+        run: docker compose -f deploy/docker-compose.test.yml up -d --build
+      - name: Show container status
+        run: docker compose -f deploy/docker-compose.test.yml ps
