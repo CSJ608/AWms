@@ -21,3 +21,13 @@ docs/methodology/_handoff.md
 # 系统
 .DS_Store
 Thumbs.db
+
+# Visual Studio / IDE
+.vs/
+.vsconfig
+*.user
+
+
+# NuGet workspace cache
+backend/.nuget-packages/
+
