@@ -5,6 +5,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
+import { changeLanguage } from '@/i18n'
 import { renderAuthed } from '@/test/utils'
 
 function rowOf(code: string): HTMLElement {
@@ -114,6 +115,28 @@ describe('物料页', () => {
 
     await screen.findByText('物料已被批次引用，禁止删除')
     expect(screen.getByText('MAT-001')).toBeInTheDocument()
+  })
+
+  it('批控列显示 是/否（中英随语言，不显示 true/false 原文）——验收 F-03', async () => {
+    renderAuthed('/web/master/materials')
+    await screen.findByText('螺母 M6')
+
+    // MAT-001 批控=true → 是；MAT-002 批控=false → 否
+    const row1 = rowOf('MAT-001')
+    const row2 = rowOf('MAT-002')
+    expect(within(row1).getByText('是')).toBeInTheDocument()
+    expect(within(row2).getByText('否')).toBeInTheDocument()
+    // 不泄漏布尔原文
+    expect(screen.queryByText('true')).not.toBeInTheDocument()
+    expect(screen.queryByText('false')).not.toBeInTheDocument()
+
+    // 切英文 → Yes / No（语言恢复中文，避免影响同文件后续用例）
+    changeLanguage('en')
+    await waitFor(() => {
+      expect(within(row1).getByText('Yes')).toBeInTheDocument()
+    })
+    expect(within(row2).getByText('No')).toBeInTheDocument()
+    changeLanguage('zh')
   })
 
   it('高级筛选展开/收起', async () => {

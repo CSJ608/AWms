@@ -30,7 +30,8 @@ describe('401 单飞刷新 + 排队重放', () => {
 
     await apiListMaterials({ page: 1, pageSize: 5 })
 
-    expect(sessionStore.getToken()).toBe('mock-token-admin')
+    // 刷新签发新 token（mock-token-admin#<轮次>，对齐真实后端每次 refresh 换发）
+    expect(sessionStore.getToken()).toBe('mock-token-admin#1')
     expect(mockState.refreshCount).toBe(1)
     // 刷新后 token 已恢复有效，后续请求不再触发刷新
     await apiListMaterials({ page: 1, pageSize: 5 })

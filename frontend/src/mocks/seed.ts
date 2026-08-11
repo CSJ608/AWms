@@ -16,8 +16,12 @@ export const MOCK_EXPIRED_TOKEN = 'mock-expired-token'
 export const seedPermissions: PermissionItem[] = [
   // 路由
   { id: 'p-route-master', code: 'route.master-data', name: '主数据', category: 'ROUTE', moduleCode: 'master-data' },
+  { id: 'p-route-inbound', code: 'route.inbound', name: '入库', category: 'ROUTE', moduleCode: 'inbound' },
+  { id: 'p-route-system', code: 'route.system', name: '系统管理', category: 'ROUTE', moduleCode: 'system' },
   // 菜单
   { id: 'p-menu-master', code: 'menu.master-data', name: '主数据菜单', category: 'MENU', moduleCode: 'master-data' },
+  { id: 'p-menu-inbound', code: 'menu.inbound', name: '入库菜单', category: 'MENU', moduleCode: 'inbound' },
+  { id: 'p-menu-system', code: 'menu.system', name: '系统管理菜单', category: 'MENU', moduleCode: 'system' },
   // 操作：物料
   { id: 'p-act-mat-c', code: 'action.material.create', name: '新建物料', category: 'ACTION', moduleCode: 'master-data' },
   { id: 'p-act-mat-u', code: 'action.material.edit', name: '编辑物料', category: 'ACTION', moduleCode: 'master-data' },
@@ -118,13 +122,19 @@ export function permissionsOf(username: string): string[] {
   return seedUsers.find((u) => u.username === username)?.roles[0]?.permissionCodes ?? []
 }
 
-// ── 菜单（模块注册表）──────────────────────────────────
+// ── 菜单（模块注册表，与真实后端一致：dashboard/inbound/master-data/system 四项）──────
 export const ALL_MENUS = {
   web: [
+    // 工作台（dashboard 无权限码 = 所有登录用户可见占位页，对齐协调者 C4① 裁决）
+    { path: '/', titleKey: 'nav.workspace', groupKey: 'nav.group.workspace', moduleCode: 'dashboard', iconKey: 'dashboard', sort: 5 },
+    // 入库（占位页；menu.inbound 权限）
+    { path: '/inbound', titleKey: 'nav.inbound', groupKey: 'nav.group.operations', moduleCode: 'inbound', iconKey: 'scan', sort: 20 },
     { path: '/web/master/materials', titleKey: 'nav.material', groupKey: 'nav.group.master', moduleCode: 'master-data', iconKey: 'package', sort: 10 },
     { path: '/web/master/warehouses', titleKey: 'nav.warehouse', groupKey: 'nav.group.master', moduleCode: 'master-data', iconKey: 'warehouse', sort: 20 },
     { path: '/web/master/sources', titleKey: 'nav.source', groupKey: 'nav.group.master', moduleCode: 'master-data', iconKey: 'truck', sort: 30 },
     { path: '/web/master/batches', titleKey: 'nav.batch', groupKey: 'nav.group.master', moduleCode: 'master-data', iconKey: 'layers', sort: 40 },
+    // 系统管理（占位页；menu.system 权限）
+    { path: '/system', titleKey: 'nav.system', groupKey: 'nav.group.settings', moduleCode: 'system', iconKey: 'shield', sort: 40 },
   ],
   pda: [
     { code: 'receiving', titleKey: 'pda.receiving', moduleCode: 'inbound', sort: 10 },
@@ -133,11 +143,12 @@ export const ALL_MENUS = {
   ],
 } as const
 
-/** 菜单过滤：menu.<moduleCode> 权限码（后端按角色过滤后返回，前端只渲染） */
+/** 菜单过滤：menu.<moduleCode> 权限码（后端按角色过滤后返回，前端只渲染）；
+ * dashboard 无权限码 = 所有登录用户可见。 */
 export function menusFor(username: string) {
   const perms = permissionsOf(username)
   return {
-    web: ALL_MENUS.web.filter((m) => perms.includes(`menu.${m.moduleCode}`)),
+    web: ALL_MENUS.web.filter((m) => m.moduleCode === 'dashboard' || perms.includes(`menu.${m.moduleCode}`)),
     pda: ALL_MENUS.pda.filter((m) => perms.includes(`pda.${m.code}`)),
   }
 }

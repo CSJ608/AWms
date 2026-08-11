@@ -49,19 +49,32 @@ export function enumColumn<T>(accessor: keyof T & string, headerKey: string, enu
   }
 }
 
-/** 布尔列（✓ / ✗，如批控） */
+/** 布尔单元格（✓/✗ + 是/否，中英随语言；验收 F-03：不显示 true/false 原文） */
+function BoolCell({ value }: { value: boolean }) {
+  const { t } = useTranslation()
+  return value
+    ? (
+        <span className="inline-flex items-center gap-1 text-success">
+          <Check className="size-4" data-icon />
+          {t('common.yes')}
+        </span>
+      )
+    : (
+        <span className="inline-flex items-center gap-1 text-muted-foreground">
+          <X className="size-4" data-icon />
+          {t('common.no')}
+        </span>
+      )
+}
+
+/** 布尔列（✓/✗ + 是/否，中英随语言；验收 F-03：不显示 true/false 原文） */
 export function boolColumn<T>(accessor: keyof T & string, headerKey: string, sortable = false): ColumnDef<T> {
   return {
     id: accessor,
     accessorFn: (row) => row[accessor] as boolean,
     header: headerKey,
     meta: { sortable },
-    cell: ({ row }) => {
-      const v = row.original[accessor]
-      return v
-        ? <Check className="size-4 text-success" data-icon aria-label="true" />
-        : <X className="size-4 text-muted-foreground" data-icon aria-label="false" />
-    },
+    cell: ({ row }) => <BoolCell value={Boolean(row.original[accessor])} />,
   }
 }
 

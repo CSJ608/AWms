@@ -3,7 +3,7 @@
  */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -46,7 +46,13 @@ export function WarehouseFormDialog({ open, editing, onOpenChange, onSaved }: Wa
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    values: useMemo<FormValues>(() => editing
+    defaultValues: { code: '', name: '', searchCode: '', status: 'ENABLED', mgmtMode: 'MANUAL' },
+  })
+
+  // 打开时按 新建/编辑 重置为对应初值（验收⑥：新建不保留上次输入；编辑回填不串）
+  useEffect(() => {
+    if (!open) return
+    form.reset(editing
       ? {
           code: editing.code,
           name: editing.name,
@@ -54,8 +60,8 @@ export function WarehouseFormDialog({ open, editing, onOpenChange, onSaved }: Wa
           status: editing.status,
           mgmtMode: editing.mgmtMode,
         }
-      : { code: '', name: '', searchCode: '', status: 'ENABLED', mgmtMode: 'MANUAL' }, [editing, open]),
-  })
+      : { code: '', name: '', searchCode: '', status: 'ENABLED', mgmtMode: 'MANUAL' })
+  }, [open, editing, form])
 
   const mutation = useMutation({
     mutationFn: (v: FormValues): Promise<unknown> => {

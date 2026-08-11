@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 export function ModulePlaceholderPage({ titleKey }: { titleKey: string }) {
   const { t } = useTranslation()
   return (
-    <div className="flex h-screen flex-col items-center justify-center gap-2 text-center">
+    <div className="flex h-full min-h-64 flex-col items-center justify-center gap-2 text-center">
       <p className="text-2xl font-semibold">{t(titleKey)}</p>
       <p className="text-sm text-muted-foreground">{t('common.developing')}</p>
     </div>

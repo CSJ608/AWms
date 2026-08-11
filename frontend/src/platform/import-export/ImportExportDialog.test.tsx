@@ -55,6 +55,24 @@ describe('导入导出弹窗', () => {
     await screen.findByText('导入完成：成功 2 行')
   })
 
+  it('导入任务状态走 i18n 翻译，不泄漏 key 原文（验收 F-04）', async () => {
+    await openImportDialog()
+    const input = screen.getByTestId('import-file-input')
+    fireEvent.change(input, { target: { files: [makeXlsxFile('编码,名称\nMAT-777,新物料A')] } })
+
+    // precheck 后状态 = PRECHECKED → 校验完成
+    await screen.findByText('共 1 行：成功 1，失败 0')
+    expect(screen.getByText(/校验完成/)).toBeInTheDocument()
+
+    // 执行后状态 = DONE → 已完成
+    fireEvent.click(screen.getByTestId('execute-import'))
+    await screen.findByText('导入完成：成功 1 行')
+    expect(screen.getByText(/已完成/)).toBeInTheDocument()
+
+    // 全程不泄漏 enums.importTaskStatus.* key 原文
+    expect(screen.queryByText(/enums\.importTaskStatus/)).not.toBeInTheDocument()
+  })
+
   it('导出：创建任务 → 下载文件', async () => {
     await openImportDialog()
     // Radix Tabs 需真实 pointer 事件链（合成 click 不触发切换）

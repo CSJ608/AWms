@@ -300,6 +300,80 @@ public class AuthServiceTests
         var ex = await Assert.ThrowsAsync<DomainException>(() => service.GetRoleAsync(Guid.NewGuid()));
         Assert.Equal("ROLE_NOT_FOUND", ex.Code);
         Assert.Equal(404, ex.StatusCode);
+    } 
+    // ---- C4① 菜单权限过滤：RequiredPermissionCode 种子 + BuildMenuTree 过滤 ----
+    private static AWmsDbContext CreateMenuPermissionDbContext()
+    {
+        var db = CreateDbContext();
+        var hasher = new Argon2PasswordHasher();
+
+        db.MenuDefinitions.AddRange(
+            new MenuDefinition { Code = "menu.dashboard", TitleKey = "nav.workspace", GroupKey = "nav.group.workspace", ModuleCode = "dashboard", IconKey = "home", Path = "/", Surface = Surface.WEB, Sort = 10 },
+            new MenuDefinition { Code = "menu.inbound", TitleKey = "nav.inbound", GroupKey = "nav.group.operations", ModuleCode = "inbound", IconKey = "inbox", Path = "/inbound", Surface = Surface.WEB, Sort = 20, RequiredPermissionCode = "route.inbound" },
+            new MenuDefinition { Code = "menu.master-data", TitleKey = "nav.master-data", GroupKey = "nav.group.settings", ModuleCode = "master-data", IconKey = "database", Path = "/master-data", Surface = Surface.WEB, Sort = 30, RequiredPermissionCode = "route.master-data" },
+            new MenuDefinition { Code = "menu.system", TitleKey = "nav.system", GroupKey = "nav.group.settings", ModuleCode = "system", IconKey = "settings", Path = "/system", Surface = Surface.WEB, Sort = 40, RequiredPermissionCode = "route.system" },
+            new MenuDefinition { Code = "pda.receiving", TitleKey = "pda.receiving", ModuleCode = "inbound", Sort = 10, Surface = Surface.PDA, RequiredPermissionCode = "route.inbound" });
+
+        var permInbound = new Permission { Code = "route.inbound", Name = "入库", Category = PermissionCategory.ROUTE, ModuleCode = "inbound" };
+        var permMasterData = new Permission { Code = "route.master-data", Name = "主数据", Category = PermissionCategory.ROUTE, ModuleCode = "master-data" };
+        var permSystem = new Permission { Code = "route.system", Name = "系统", Category = PermissionCategory.ROUTE, ModuleCode = "system" };
+        db.Permissions.AddRange(permInbound, permMasterData, permSystem);
+
+        var opRole = new Role { Code = "OPERATOR", Name = "作业员" };
+        var svRole = new Role { Code = "SUPERVISOR", Name = "仓管" };
+        var adminRole = new Role { Code = "SYSTEM_ADMIN", Name = "系统管理员" };
+        db.Roles.AddRange(opRole, svRole, adminRole);
+
+        db.RolePermissions.AddRange(
+            new RolePermission { Role = opRole, Permission = permInbound },
+            new RolePermission { Role = svRole, Permission = permInbound },
+            new RolePermission { Role = svRole, Permission = permMasterData },
+            new RolePermission { Role = adminRole, Permission = permInbound },
+            new RolePermission { Role = adminRole, Permission = permMasterData },
+            new RolePermission { Role = adminRole, Permission = permSystem });
+
+        db.Users.AddRange(
+            new User { Username = "op-menu", Name = "作业员", PasswordHash = hasher.Hash("Pass123!"), Status = UserStatus.ACTIVE, UserRoles = { new UserRole { Role = opRole } } },
+            new User { Username = "sv-menu", Name = "仓管", PasswordHash = hasher.Hash("Pass123!"), Status = UserStatus.ACTIVE, UserRoles = { new UserRole { Role = svRole } } },
+            new User { Username = "adm-menu", Name = "系统管理员", PasswordHash = hasher.Hash("Pass123!"), Status = UserStatus.ACTIVE, UserRoles = { new UserRole { Role = adminRole } } });
+
+        db.SaveChanges();
+        db.ChangeTracker.Clear();
+        return db;
+    }
+
+    [Fact]
+    public async Task LoginAsync_OPERATOR_菜单仅dashboard与inbound_pda含receiving()
+    {
+        var service = CreateAuthService(CreateMenuPermissionDbContext());
+
+        var result = await service.LoginAsync("op-menu", "Pass123!");
+
+        Assert.Equal(new[] { "menu.dashboard", "menu.inbound" }, result.Menus.Web.Select(m => m.Code).OrderBy(c => c).ToArray());
+        Assert.DoesNotContain(result.Menus.Web, m => m.Code is "menu.master-data" or "menu.system");
+        Assert.Contains(result.Menus.Pda, m => m.Code == "pda.receiving");
+    }
+
+    [Fact]
+    public async Task LoginAsync_SUPERVISOR_菜单含dashboard_inbound_masterdata_不含system()
+    {
+        var service = CreateAuthService(CreateMenuPermissionDbContext());
+
+        var result = await service.LoginAsync("sv-menu", "Pass123!");
+
+        Assert.Equal(new[] { "menu.dashboard", "menu.inbound", "menu.master-data" }, result.Menus.Web.Select(m => m.Code).OrderBy(c => c).ToArray());
+        Assert.DoesNotContain(result.Menus.Web, m => m.Code == "menu.system");
+    }
+
+    [Fact]
+    public async Task LoginAsync_SYSTEM_ADMIN_菜单全量4项()
+    {
+        var service = CreateAuthService(CreateMenuPermissionDbContext());
+
+        var result = await service.LoginAsync("adm-menu", "Pass123!");
+
+        Assert.Equal(new[] { "menu.dashboard", "menu.inbound", "menu.master-data", "menu.system" }, result.Menus.Web.Select(m => m.Code).OrderBy(c => c).ToArray());
+        Assert.Contains(result.Menus.Pda, m => m.Code == "pda.receiving");
     }
 }
 
