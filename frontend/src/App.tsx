@@ -31,6 +31,13 @@ function WebIndexRedirect() {
   return <Navigate to={first ? menuTarget(first) : '/web/master/materials'} replace />
 }
 
+
+/** 根路径重定向：未登录 → /login；已登录 → /web（修复 test 环境访问 / 显示 404） */
+function RootRedirect() {
+  const { status } = useAuth()
+  return <Navigate to={status === 'authed' ? '/web' : '/login'} replace />
+}
+
 function NotFoundPage() {
   const { t } = useTranslation()
   return (
@@ -45,6 +52,7 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/" element={<RootRedirect />} />
 
       {/* Web 后台（RequireAuth 布局） */}
       <Route
