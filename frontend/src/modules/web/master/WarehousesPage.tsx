@@ -33,6 +33,9 @@ export function WarehousesPage() {
       commonSearchFields={['code', 'name', 'status']}
       keyword
       defaultSort={[{ field: 'code', dir: 'asc' }]}
+      createPermission="action.warehouse.create"
+      updatePermission="action.warehouse.edit"
+      deletePermission="action.warehouse.delete"
       deleteFn={(row) => apiDeleteWarehouse(row.id)}
       rowExtraActions={(row) => (
         <Button

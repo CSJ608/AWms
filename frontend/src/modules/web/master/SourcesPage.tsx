@@ -30,6 +30,9 @@ export function SourcesPage() {
       commonSearchFields={['type', 'code', 'name']}
       keyword
       defaultSort={[{ field: 'code', dir: 'asc' }]}
+      createPermission="action.source.create"
+      updatePermission="action.source.edit"
+      deletePermission="action.source.delete"
       deleteFn={(row) => apiDeleteSource(row.id)}
       renderForm={({ open, editing, onOpenChange, onSaved }) => (
         <SourceFormDialog open={open} editing={editing} onOpenChange={onOpenChange} onSaved={onSaved} />

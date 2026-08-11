@@ -35,6 +35,17 @@ export function makeOperatorSession(): StoredSession {
   }
 }
 
+export function makeSupervisorSession(): StoredSession {
+  const user = seedUsers.find((u) => u.username === 'zhang03')!
+  return {
+    token: 'mock-token-zhang03',
+    expiresAt: '2099-01-01T00:00:00Z',
+    user,
+    permissions: permissionsOf('zhang03'),
+    menus: menusFor('zhang03'),
+  }
+}
+
 /** 预置登录会话（AuthProvider 挂载时会经 /auth/me 恢复） */
 export function seedSession(session: StoredSession = makeAdminSession()): void {
   sessionStore.save(session)

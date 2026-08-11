@@ -56,6 +56,9 @@ export function LocationsPage() {
         commonSearchFields={['code', 'type', 'status']}
         keyword
         defaultSort={[{ field: 'code', dir: 'asc' }]}
+        createPermission="action.location.create"
+        updatePermission="action.location.edit"
+        deletePermission="action.location.delete"
         deleteFn={(row) => apiDeleteLocation(row.id)}
         renderForm={({ open, editing, onOpenChange, onSaved }) => (
           <LocationFormDialog

@@ -26,21 +26,41 @@ export const seedPermissions: PermissionItem[] = [
   { id: 'p-act-mat-e', code: 'action.export', name: '导出', category: 'ACTION', moduleCode: 'master-data' },
   // 操作：仓库
   { id: 'p-act-wh-c', code: 'action.warehouse.create', name: '新建仓库', category: 'ACTION', moduleCode: 'master-data' },
-  { id: 'p-act-wh-u', code: 'action.warehouse.update', name: '编辑仓库', category: 'ACTION', moduleCode: 'master-data' },
+  { id: 'p-act-wh-u', code: 'action.warehouse.edit', name: '编辑仓库', category: 'ACTION', moduleCode: 'master-data' },
   { id: 'p-act-wh-d', code: 'action.warehouse.delete', name: '删除仓库', category: 'ACTION', moduleCode: 'master-data' },
   // 操作：库位
   { id: 'p-act-loc-c', code: 'action.location.create', name: '新建库位', category: 'ACTION', moduleCode: 'master-data' },
-  { id: 'p-act-loc-u', code: 'action.location.update', name: '编辑库位', category: 'ACTION', moduleCode: 'master-data' },
+  { id: 'p-act-loc-u', code: 'action.location.edit', name: '编辑库位', category: 'ACTION', moduleCode: 'master-data' },
   { id: 'p-act-loc-d', code: 'action.location.delete', name: '删除库位', category: 'ACTION', moduleCode: 'master-data' },
   // 操作：来源
   { id: 'p-act-src-c', code: 'action.source.create', name: '新建来源', category: 'ACTION', moduleCode: 'master-data' },
-  { id: 'p-act-src-u', code: 'action.source.update', name: '编辑来源', category: 'ACTION', moduleCode: 'master-data' },
+  { id: 'p-act-src-u', code: 'action.source.edit', name: '编辑来源', category: 'ACTION', moduleCode: 'master-data' },
   { id: 'p-act-src-d', code: 'action.source.delete', name: '删除来源', category: 'ACTION', moduleCode: 'master-data' },
 ]
 
 const ALL_PERMISSIONS = seedPermissions.map((p) => p.code)
 // 与后端默认角色一致：OPERATOR 仅 inbound（无 master-data 菜单/路由/操作权限）
 const OPERATOR_PERMISSIONS = ['route.inbound', 'menu.inbound', 'action.receiving.create']
+// 与后端默认角色一致：SUPERVISOR = 入库 + 主数据（含物料/导入导出 + 仓库/库位/来源 9 个新增操作码）
+const SUPERVISOR_PERMISSIONS = [
+  ...OPERATOR_PERMISSIONS,
+  'route.master-data',
+  'menu.master-data',
+  'action.material.create',
+  'action.material.edit',
+  'action.material.delete',
+  'action.import',
+  'action.export',
+  'action.warehouse.create',
+  'action.warehouse.edit',
+  'action.warehouse.delete',
+  'action.location.create',
+  'action.location.edit',
+  'action.location.delete',
+  'action.source.create',
+  'action.source.edit',
+  'action.source.delete',
+]
 
 // ── 用户 / 角色 ───────────────────────────────────────
 export const seedUsers: UserItem[] = [
@@ -65,6 +85,16 @@ export const seedUsers: UserItem[] = [
     createdAt: NOW,
   },
   {
+    id: 'u-zhang03',
+    username: 'zhang03',
+    name: '张组长',
+    status: 'ACTIVE',
+    roles: [
+      { id: 'r-sup', code: 'SUPERVISOR', name: '仓管', permissionCodes: SUPERVISOR_PERMISSIONS, createdAt: NOW },
+    ],
+    createdAt: NOW,
+  },
+  {
     id: 'u-li02',
     username: 'li02',
     name: '李停用',
@@ -80,6 +110,7 @@ export const seedUsers: UserItem[] = [
 export const SEED_PASSWORDS: Record<string, string> = {
   admin: 'admin123',
   wang01: '123456',
+  zhang03: '123456',
   li02: '123456',
 }
 
