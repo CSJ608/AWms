@@ -21,6 +21,7 @@ export default {
     expand: '展开',
     retry: '重试',
     back: '返回',
+    developing: '模块开发中，敬请期待',
     loading: '加载中…',
     total: '共 {{total}} 条',
     filtered: '当前筛选 {{count}} 条',

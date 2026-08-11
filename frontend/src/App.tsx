@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from '@/platform/auth/auth-context'
 import { RequireAuth, RequirePermission, WEB_ROUTES, menuTarget } from '@/platform/route-registry'
 import { AppLayout } from '@/modules/web/layout/AppLayout'
 import { LoginPage } from '@/modules/web/login/LoginPage'
+import { ModulePlaceholderPage } from '@/modules/web/ModulePlaceholderPage'
 import { PdaHomePage } from '@/modules/pda/PdaHomePage'
 
 const queryClient = new QueryClient({
@@ -32,10 +33,12 @@ function WebIndexRedirect() {
 }
 
 
-/** 根路径重定向：未登录 → /login；已登录 → /web（修复 test 环境访问 / 显示 404） */
-function RootRedirect() {
+/** 根路径：未登录 → /login；已登录 → 工作台占位页（工作台本期未实现，不再回跳主数据/404） */
+function RootRoute() {
   const { status } = useAuth()
-  return <Navigate to={status === 'authed' ? '/web' : '/login'} replace />
+  if (status === 'loading') return null
+  if (status !== 'authed') return <Navigate to='/login' replace />
+  return <ModulePlaceholderPage titleKey='nav.workspace' />
 }
 
 function NotFoundPage() {
@@ -52,7 +55,10 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/" element={<RootRedirect />} />
+      <Route path="/" element={<RootRoute />} />
+      <Route path="/inbound" element={<RequireAuth><ModulePlaceholderPage titleKey="nav.inbound" /></RequireAuth>} />
+      <Route path="/system" element={<RequireAuth><ModulePlaceholderPage titleKey="nav.system" /></RequireAuth>} />
+      <Route path="/master-data" element={<Navigate to="/web/master/materials" replace />} />
 
       {/* Web 后台（RequireAuth 布局） */}
       <Route
