@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AWms.Api.Middleware;
 using AWms.Domain.Dtos.Common;
@@ -9,6 +9,7 @@ namespace AWms.Api.Controllers;
 
 [ApiController]
 [Route("api/import-export")]
+[RequirePermission("route.master-data")]
 [Authorize]
 public class ImportExportController : ControllerBase
 {

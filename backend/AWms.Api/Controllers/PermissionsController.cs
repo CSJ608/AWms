@@ -1,5 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using AWms.Api.Middleware;
 using AWms.Domain.Dtos.Permissions;
 using AWms.Domain.Dtos.Common;
 using AWms.Infrastructure.Services;
@@ -8,6 +9,7 @@ namespace AWms.Api.Controllers;
 
 [ApiController]
 [Route("api/permissions")]
+[RequirePermission("route.system")]
 [Authorize]
 public class PermissionsController : ControllerBase
 {

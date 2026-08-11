@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AWms.Api.Middleware;
 using AWms.Domain.Dtos.Common;
@@ -9,6 +9,7 @@ namespace AWms.Api.Controllers;
 
 [ApiController]
 [Route("api/warehouses")]
+[RequirePermission("route.master-data")]
 [Authorize]
 public class WarehousesController : ControllerBase
 {
@@ -38,7 +39,7 @@ public class WarehousesController : ControllerBase
     }
 
     [HttpPost]
-    [RequirePermission("action.material.create")]
+    [RequirePermission("action.warehouse.create")]
     public async Task<IActionResult> Create([FromBody] CreateWarehouseRequest request)
     {
         var result = await _service.CreateWarehouseAsync(request);
@@ -46,7 +47,7 @@ public class WarehousesController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [RequirePermission("action.material.edit")]
+    [RequirePermission("action.warehouse.edit")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateWarehouseRequest request)
     {
         var result = await _service.UpdateWarehouseAsync(id, request);
@@ -54,7 +55,7 @@ public class WarehousesController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [RequirePermission("action.material.delete")]
+    [RequirePermission("action.warehouse.delete")]
     public async Task<IActionResult> Delete(Guid id)
     {
         await _service.DeleteWarehouseAsync(id);
@@ -77,7 +78,7 @@ public class WarehousesController : ControllerBase
     }
 
     [HttpPost("{warehouseId:guid}/locations")]
-    [RequirePermission("action.material.create")]
+    [RequirePermission("action.location.create")]
     public async Task<IActionResult> CreateLocation(Guid warehouseId, [FromBody] CreateLocationRequest request)
     {
         var result = await _service.CreateLocationAsync(warehouseId, request);
@@ -85,7 +86,7 @@ public class WarehousesController : ControllerBase
     }
 
     [HttpPut("/api/locations/{id:guid}")]
-    [RequirePermission("action.material.edit")]
+    [RequirePermission("action.location.edit")]
     public async Task<IActionResult> UpdateLocation(Guid id, [FromBody] UpdateLocationRequest request)
     {
         var result = await _service.UpdateLocationAsync(id, request);
@@ -93,7 +94,7 @@ public class WarehousesController : ControllerBase
     }
 
     [HttpDelete("/api/locations/{id:guid}")]
-    [RequirePermission("action.material.delete")]
+    [RequirePermission("action.location.delete")]
     public async Task<IActionResult> DeleteLocation(Guid id)
     {
         await _service.DeleteLocationAsync(id);

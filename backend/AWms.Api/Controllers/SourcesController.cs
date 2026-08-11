@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AWms.Api.Middleware;
 using AWms.Domain.Dtos.Common;
@@ -9,6 +9,7 @@ namespace AWms.Api.Controllers;
 
 [ApiController]
 [Route("api/sources")]
+[RequirePermission("route.master-data")]
 [Authorize]
 public class SourcesController : ControllerBase
 {
@@ -38,7 +39,7 @@ public class SourcesController : ControllerBase
     }
 
     [HttpPost]
-    [RequirePermission("action.material.create")]
+    [RequirePermission("action.source.create")]
     public async Task<IActionResult> Create([FromBody] CreateSourceRequest request)
     {
         var result = await _service.CreateSourceAsync(request);
@@ -46,7 +47,7 @@ public class SourcesController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [RequirePermission("action.material.edit")]
+    [RequirePermission("action.source.edit")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateSourceRequest request)
     {
         var result = await _service.UpdateSourceAsync(id, request);
@@ -54,7 +55,7 @@ public class SourcesController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [RequirePermission("action.material.delete")]
+    [RequirePermission("action.source.delete")]
     public async Task<IActionResult> Delete(Guid id)
     {
         await _service.DeleteSourceAsync(id);

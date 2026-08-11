@@ -1,5 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using AWms.Api.Middleware;
 using AWms.Domain.Dtos.Common;
 
 namespace AWms.Api.Controllers;
@@ -7,6 +8,7 @@ namespace AWms.Api.Controllers;
 [ApiController]
 [Route("api/meta")]
 [Authorize]
+[RequirePermission("route.master-data")]
 public class MetaController : ControllerBase
 {
     [HttpGet("fields/{resource}")]

@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using AWms.Domain.Entities;
 using AWms.Domain.Enums;
 
@@ -249,6 +249,16 @@ public class AWmsDbContext : DbContext
         var permMenuSystem = Guid.Parse("10000000-0000-0000-0000-000000000012");
         var permActionUserManage = Guid.Parse("10000000-0000-0000-0000-000000000013");
 
+        var permActionWarehouseCreate = Guid.Parse("10000000-0000-0000-0000-000000000014");
+        var permActionWarehouseEdit = Guid.Parse("10000000-0000-0000-0000-000000000015");
+        var permActionWarehouseDelete = Guid.Parse("10000000-0000-0000-0000-000000000016");
+        var permActionLocationCreate = Guid.Parse("10000000-0000-0000-0000-000000000017");
+        var permActionLocationEdit = Guid.Parse("10000000-0000-0000-0000-000000000018");
+        var permActionLocationDelete = Guid.Parse("10000000-0000-0000-0000-000000000019");
+        var permActionSourceCreate = Guid.Parse("10000000-0000-0000-0000-000000000020");
+        var permActionSourceEdit = Guid.Parse("10000000-0000-0000-0000-000000000021");
+        var permActionSourceDelete = Guid.Parse("10000000-0000-0000-0000-000000000022");
+
         modelBuilder.Entity<Permission>().HasData(
             new Permission { Id = permRouteInbound, Code = "route.inbound", Name = "入库模块", Category = PermissionCategory.ROUTE, ModuleCode = "inbound" },
             new Permission { Id = permMenuInbound, Code = "menu.inbound", Name = "入库菜单", Category = PermissionCategory.MENU, ModuleCode = "inbound" },
@@ -262,7 +272,16 @@ public class AWmsDbContext : DbContext
             new Permission { Id = permActionExport, Code = "action.export", Name = "导出", Category = PermissionCategory.ACTION, ModuleCode = "master-data" },
             new Permission { Id = permRouteSystem, Code = "route.system", Name = "系统模块", Category = PermissionCategory.ROUTE, ModuleCode = "system" },
             new Permission { Id = permMenuSystem, Code = "menu.system", Name = "系统菜单", Category = PermissionCategory.MENU, ModuleCode = "system" },
-            new Permission { Id = permActionUserManage, Code = "action.user.manage", Name = "用户管理", Category = PermissionCategory.ACTION, ModuleCode = "system" }
+            new Permission { Id = permActionUserManage, Code = "action.user.manage", Name = "用户管理", Category = PermissionCategory.ACTION, ModuleCode = "system" },
+            new Permission { Id = permActionWarehouseCreate, Code = "action.warehouse.create", Name = "创建仓库", Category = PermissionCategory.ACTION, ModuleCode = "master-data" },
+            new Permission { Id = permActionWarehouseEdit, Code = "action.warehouse.edit", Name = "编辑仓库", Category = PermissionCategory.ACTION, ModuleCode = "master-data" },
+            new Permission { Id = permActionWarehouseDelete, Code = "action.warehouse.delete", Name = "删除仓库", Category = PermissionCategory.ACTION, ModuleCode = "master-data" },
+            new Permission { Id = permActionLocationCreate, Code = "action.location.create", Name = "创建库位", Category = PermissionCategory.ACTION, ModuleCode = "master-data" },
+            new Permission { Id = permActionLocationEdit, Code = "action.location.edit", Name = "编辑库位", Category = PermissionCategory.ACTION, ModuleCode = "master-data" },
+            new Permission { Id = permActionLocationDelete, Code = "action.location.delete", Name = "删除库位", Category = PermissionCategory.ACTION, ModuleCode = "master-data" },
+            new Permission { Id = permActionSourceCreate, Code = "action.source.create", Name = "创建来源", Category = PermissionCategory.ACTION, ModuleCode = "master-data" },
+            new Permission { Id = permActionSourceEdit, Code = "action.source.edit", Name = "编辑来源", Category = PermissionCategory.ACTION, ModuleCode = "master-data" },
+            new Permission { Id = permActionSourceDelete, Code = "action.source.delete", Name = "删除来源", Category = PermissionCategory.ACTION, ModuleCode = "master-data" }
         );
 
         modelBuilder.Entity<Role>().HasData(
@@ -285,7 +304,16 @@ public class AWmsDbContext : DbContext
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000010"), RoleId = adminId, PermissionId = permActionExport },
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000011"), RoleId = adminId, PermissionId = permRouteSystem },
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000012"), RoleId = adminId, PermissionId = permMenuSystem },
-            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000013"), RoleId = adminId, PermissionId = permActionUserManage }
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000013"), RoleId = adminId, PermissionId = permActionUserManage },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000050"), RoleId = adminId, PermissionId = permActionWarehouseCreate },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000051"), RoleId = adminId, PermissionId = permActionWarehouseEdit },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000052"), RoleId = adminId, PermissionId = permActionWarehouseDelete },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000053"), RoleId = adminId, PermissionId = permActionLocationCreate },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000054"), RoleId = adminId, PermissionId = permActionLocationEdit },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000055"), RoleId = adminId, PermissionId = permActionLocationDelete },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000056"), RoleId = adminId, PermissionId = permActionSourceCreate },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000057"), RoleId = adminId, PermissionId = permActionSourceEdit },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000058"), RoleId = adminId, PermissionId = permActionSourceDelete }
         );
 
         // OPERATOR：仅入库（固定 GUID 3000…021+）
@@ -306,7 +334,16 @@ public class AWmsDbContext : DbContext
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000037"), RoleId = supervisorId, PermissionId = permActionMaterialEdit },
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000038"), RoleId = supervisorId, PermissionId = permActionMaterialDelete },
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000039"), RoleId = supervisorId, PermissionId = permActionImport },
-            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000040"), RoleId = supervisorId, PermissionId = permActionExport }
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000040"), RoleId = supervisorId, PermissionId = permActionExport },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000041"), RoleId = supervisorId, PermissionId = permActionWarehouseCreate },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000042"), RoleId = supervisorId, PermissionId = permActionWarehouseEdit },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000043"), RoleId = supervisorId, PermissionId = permActionWarehouseDelete },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000044"), RoleId = supervisorId, PermissionId = permActionLocationCreate },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000045"), RoleId = supervisorId, PermissionId = permActionLocationEdit },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000046"), RoleId = supervisorId, PermissionId = permActionLocationDelete },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000047"), RoleId = supervisorId, PermissionId = permActionSourceCreate },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000048"), RoleId = supervisorId, PermissionId = permActionSourceEdit },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000049"), RoleId = supervisorId, PermissionId = permActionSourceDelete }
         );
 
         // Menus（固定 GUID 2000…）

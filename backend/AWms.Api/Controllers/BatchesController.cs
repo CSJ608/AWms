@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
+using AWms.Api.Middleware;
 using Microsoft.AspNetCore.Mvc;
 using AWms.Domain.Dtos.Batches;
 using AWms.Domain.Dtos.Common;
@@ -8,6 +9,7 @@ namespace AWms.Api.Controllers;
 
 [ApiController]
 [Route("api/batches")]
+[RequirePermission("route.master-data")]
 [Authorize]
 public class BatchesController : ControllerBase
 {

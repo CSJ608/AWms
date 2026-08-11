@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using AWms.Api.Middleware;
 using AWms.Domain.Dtos.Users;
@@ -9,6 +9,7 @@ namespace AWms.Api.Controllers;
 
 [ApiController]
 [Route("api/users")]
+[RequirePermission("route.system")]
 [Authorize]
 public class UsersController : ControllerBase
 {
