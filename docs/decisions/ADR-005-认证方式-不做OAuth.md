@@ -1,4 +1,4 @@
-# ADR-005：认证方式——本期内部账号 + Bearer token，不做 OAuth（草案）
+# ADR-005：认证方式——本期内部账号 + Bearer token，不做 OAuth（已采纳）
 
 > 状态：**已采纳 v0.3（2026-08-10，用户确认 + 评审）**。
 
@@ -18,7 +18,7 @@
 - 标准 OAuth 授权码流程（客户端注册/重定向/授权服务器）对内部系统是纯成本，PDA 端无浏览器重定向便利。
 - "用户名+密码 → Bearer token → 静默刷新重放"已满足本期全部需求。
 
-## 决策（建议）
+## 决策（已采纳）
 
 1. **本期**：用户名+密码 → Bearer token（JWT 或等值，含 sub/exp/roles/permissions）；login/refresh/me/logout 接口形态（已定，认证权限契约 v0.1）。
 2. **密码安全**：哈希存储（**Argon2id**，评审 A-4 收敛；备选 ASP.NET Core Identity PasswordHasher）；token 有效期 + refresh；管理员重置密码，无自助注册。

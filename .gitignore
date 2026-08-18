@@ -9,6 +9,9 @@ dist/
 bin/
 obj/
 *.user
+TestResults/
+coverage/
+*.cobertura.xml
 
 # 环境与密钥
 .env
