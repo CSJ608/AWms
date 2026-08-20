@@ -3,6 +3,7 @@ using System;
 using AWms.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AWms.Infrastructure.Migrations
 {
     [DbContext(typeof(AWmsDbContext))]
-    partial class AWmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260820170804_AddInboundReceiptChain")]
+    partial class AddInboundReceiptChain
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -70,7 +73,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("BizType", "BizId");
 
-                    b.ToTable("Attachments", (string)null);
+                    b.ToTable("Attachments");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Batch", b =>
@@ -129,7 +132,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("MaterialId", "BatchNo")
                         .IsUnique();
 
-                    b.ToTable("Batches", (string)null);
+                    b.ToTable("Batches");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.IdempotencyRecord", b =>
@@ -170,7 +173,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("Key")
                         .IsUnique();
 
-                    b.ToTable("IdempotencyRecords", (string)null);
+                    b.ToTable("IdempotencyRecords");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.ImportTask", b =>
@@ -237,7 +240,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("TaskNo")
                         .IsUnique();
 
-                    b.ToTable("ImportTasks", (string)null);
+                    b.ToTable("ImportTasks");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.ImportTaskDetail", b =>
@@ -271,7 +274,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("ImportTaskId");
 
-                    b.ToTable("ImportTaskDetails", (string)null);
+                    b.ToTable("ImportTaskDetails");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.InboundOrder", b =>
@@ -337,7 +340,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("WarehouseId", "Status", "CreatedAt");
 
-                    b.ToTable("InboundOrders", (string)null);
+                    b.ToTable("InboundOrders");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.InboundOrderLine", b =>
@@ -365,7 +368,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("OrderId", "LineNo")
                         .IsUnique();
 
-                    b.ToTable("InboundOrderLines", (string)null);
+                    b.ToTable("InboundOrderLines");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Location", b =>
@@ -418,7 +421,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("WarehouseId", "Code")
                         .IsUnique();
 
-                    b.ToTable("Locations", (string)null);
+                    b.ToTable("Locations");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Material", b =>
@@ -477,7 +480,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("Status");
 
-                    b.ToTable("Materials", (string)null);
+                    b.ToTable("Materials");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.MenuDefinition", b =>
@@ -529,7 +532,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("ParentId");
 
-                    b.ToTable("MenuDefinitions", (string)null);
+                    b.ToTable("MenuDefinitions");
 
                     b.HasData(
                         new
@@ -646,7 +649,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.ToTable("Permissions", (string)null);
+                    b.ToTable("Permissions");
 
                     b.HasData(
                         new
@@ -908,7 +911,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("LocationId", "SubjectId")
                         .IsUnique();
 
-                    b.ToTable("PhysicalInventories", (string)null);
+                    b.ToTable("PhysicalInventories");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.PrintJob", b =>
@@ -964,7 +967,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("BizType", "BizId", "CreatedAt");
 
-                    b.ToTable("PrintJobs", (string)null);
+                    b.ToTable("PrintJobs");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.PrintJobItem", b =>
@@ -1000,7 +1003,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("PrintJobId", "Seq")
                         .IsUnique();
 
-                    b.ToTable("PrintJobItems", (string)null);
+                    b.ToTable("PrintJobItems");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.PutawayRecord", b =>
@@ -1050,7 +1053,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("ToLocationId");
 
-                    b.ToTable("PutawayRecords", (string)null);
+                    b.ToTable("PutawayRecords");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.QualityCheck", b =>
@@ -1118,7 +1121,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("ResolutionAction", "CheckedAt");
 
-                    b.ToTable("QualityChecks", (string)null);
+                    b.ToTable("QualityChecks");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Receipt", b =>
@@ -1185,7 +1188,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("WarehouseId", "Status", "OccurredAt");
 
-                    b.ToTable("Receipts", (string)null);
+                    b.ToTable("Receipts");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.ReceiptLine", b =>
@@ -1250,7 +1253,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("MaterialId", "BatchId", "Status");
 
-                    b.ToTable("ReceiptLines", (string)null);
+                    b.ToTable("ReceiptLines");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Role", b =>
@@ -1277,7 +1280,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.ToTable("Roles", (string)null);
+                    b.ToTable("Roles");
 
                     b.HasData(
                         new
@@ -1322,7 +1325,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("RoleId", "PermissionId")
                         .IsUnique();
 
-                    b.ToTable("RolePermissions", (string)null);
+                    b.ToTable("RolePermissions");
 
                     b.HasData(
                         new
@@ -1726,7 +1729,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("Type", "ScopeKey", "BizDate")
                         .IsUnique();
 
-                    b.ToTable("Sequences", (string)null);
+                    b.ToTable("Sequences");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Source", b =>
@@ -1774,7 +1777,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("Type", "Code")
                         .IsUnique();
 
-                    b.ToTable("Sources", (string)null);
+                    b.ToTable("Sources");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.StockLedger", b =>
@@ -1834,7 +1837,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("TxnGroupId", "Seq")
                         .IsUnique();
 
-                    b.ToTable("StockLedgers", (string)null);
+                    b.ToTable("StockLedgers");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.StockSubject", b =>
@@ -1871,7 +1874,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("WarehouseId", "MaterialId", "BatchId", "Status")
                         .IsUnique();
 
-                    b.ToTable("StockSubjects", (string)null);
+                    b.ToTable("StockSubjects");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.TxnGroup", b =>
@@ -1898,7 +1901,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("GroupNo")
                         .IsUnique();
 
-                    b.ToTable("TxnGroups", (string)null);
+                    b.ToTable("TxnGroups");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.UniqueCode", b =>
@@ -1933,7 +1936,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("OrderLineId");
 
-                    b.ToTable("UniqueCodes", (string)null);
+                    b.ToTable("UniqueCodes");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.User", b =>
@@ -1972,7 +1975,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("Username")
                         .IsUnique();
 
-                    b.ToTable("Users", (string)null);
+                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.UserRole", b =>
@@ -1994,7 +1997,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("UserId", "RoleId")
                         .IsUnique();
 
-                    b.ToTable("UserRoles", (string)null);
+                    b.ToTable("UserRoles");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Warehouse", b =>
@@ -2042,7 +2045,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("Status");
 
-                    b.ToTable("Warehouses", (string)null);
+                    b.ToTable("Warehouses");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Batch", b =>

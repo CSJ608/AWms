@@ -23,6 +23,20 @@ public class AWmsDbContext : DbContext
     public DbSet<ImportTask> ImportTasks => Set<ImportTask>();
     public DbSet<ImportTaskDetail> ImportTaskDetails => Set<ImportTaskDetail>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+    public DbSet<InboundOrder> InboundOrders => Set<InboundOrder>();
+    public DbSet<InboundOrderLine> InboundOrderLines => Set<InboundOrderLine>();
+    public DbSet<UniqueCode> UniqueCodes => Set<UniqueCode>();
+    public DbSet<Receipt> Receipts => Set<Receipt>();
+    public DbSet<ReceiptLine> ReceiptLines => Set<ReceiptLine>();
+    public DbSet<QualityCheck> QualityChecks => Set<QualityCheck>();
+    public DbSet<PutawayRecord> PutawayRecords => Set<PutawayRecord>();
+    public DbSet<StockSubject> StockSubjects => Set<StockSubject>();
+    public DbSet<PhysicalInventory> PhysicalInventories => Set<PhysicalInventory>();
+    public DbSet<TxnGroup> TxnGroups => Set<TxnGroup>();
+    public DbSet<StockLedger> StockLedgers => Set<StockLedger>();
+    public DbSet<Attachment> Attachments => Set<Attachment>();
+    public DbSet<PrintJob> PrintJobs => Set<PrintJob>();
+    public DbSet<PrintJobItem> PrintJobItems => Set<PrintJobItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -220,8 +234,218 @@ public class AWmsDbContext : DbContext
             e.HasIndex(x => x.Key).IsUnique();
             e.HasIndex(x => x.ExpiresAt);
             e.Property(x => x.Key).HasMaxLength(128).IsRequired();
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20).HasDefaultValue(IdempotencyStatus.PENDING);
             e.Property(x => x.CreatedAt).HasColumnType("timestamptz");
             e.Property(x => x.ExpiresAt).HasColumnType("timestamptz");
+        });
+
+        // --- InboundOrder ---
+        modelBuilder.Entity<InboundOrder>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.OrderNo).IsUnique();
+            e.HasIndex(x => new { x.WarehouseId, x.Status, x.CreatedAt });
+            e.HasIndex(x => new { x.SourceType, x.SourceCode });
+            e.Property(x => x.OrderNo).HasMaxLength(64).IsRequired();
+            e.Property(x => x.Type).HasConversion<string>().HasMaxLength(10);
+            e.Property(x => x.SourceType).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.SourceCode).HasMaxLength(64);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
+            e.Property(x => x.CreatedAt).HasColumnType("timestamptz");
+            e.Property(x => x.UpdatedAt).HasColumnType("timestamptz");
+            e.Property(x => x.VoidedAt).HasColumnType("timestamptz");
+            e.Property(x => x.VoidedBy).HasMaxLength(128);
+            e.Property(x => x.VoidReason).HasMaxLength(512);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId);
+        });
+
+        // --- InboundOrderLine ---
+        modelBuilder.Entity<InboundOrderLine>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.OrderId, x.LineNo }).IsUnique();
+            e.HasIndex(x => x.MaterialId);
+            e.Property(x => x.ExpectedQty).HasColumnType("decimal(18,4)");
+            e.HasOne(x => x.Order).WithMany(x => x.Lines).HasForeignKey(x => x.OrderId);
+            e.HasOne(x => x.Material).WithMany().HasForeignKey(x => x.MaterialId);
+        });
+
+        // --- UniqueCode ---
+        modelBuilder.Entity<UniqueCode>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Code).IsUnique();
+            e.HasIndex(x => x.OrderLineId);
+            e.Property(x => x.Code).HasMaxLength(64).IsRequired();
+            e.Property(x => x.Quantity).HasColumnType("decimal(18,4)");
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.ReceivedAt).HasColumnType("timestamptz");
+            e.HasOne(x => x.OrderLine).WithMany(x => x.UniqueCodes).HasForeignKey(x => x.OrderLineId);
+        });
+
+        // --- Receipt ---
+        modelBuilder.Entity<Receipt>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.ReceiptNo).IsUnique();
+            e.HasIndex(x => new { x.WarehouseId, x.Status, x.OccurredAt });
+            e.HasIndex(x => x.InboundOrderId);
+            e.Property(x => x.ReceiptNo).HasMaxLength(64).IsRequired();
+            e.Property(x => x.SourceDocType).HasConversion<string>().HasMaxLength(10);
+            e.Property(x => x.SourceDocNo).HasMaxLength(64);
+            e.Property(x => x.SourceType).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.SourceCode).HasMaxLength(64);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.OperatorName).HasMaxLength(128).IsRequired();
+            e.Property(x => x.OccurredAt).HasColumnType("timestamptz");
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId);
+            e.HasOne(x => x.StagingLocation).WithMany().HasForeignKey(x => x.StagingLocationId);
+            e.HasOne(x => x.InboundOrder).WithMany().HasForeignKey(x => x.InboundOrderId);
+        });
+
+        // --- ReceiptLine ---
+        modelBuilder.Entity<ReceiptLine>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.ReceiptId, x.LineNo }).IsUnique();
+            e.HasIndex(x => x.OrderLineId);
+            e.HasIndex(x => new { x.MaterialId, x.BatchId, x.Status });
+            e.Property(x => x.ExpectedQty).HasColumnType("decimal(18,4)");
+            e.Property(x => x.ActualQty).HasColumnType("decimal(18,4)");
+            e.Property(x => x.QtyDiff).HasColumnType("decimal(18,4)");
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.SourceBatchNo).HasMaxLength(128);
+            e.Property(x => x.ReceivedAt).HasColumnType("timestamptz");
+            e.HasOne(x => x.Receipt).WithMany(x => x.Lines).HasForeignKey(x => x.ReceiptId);
+            e.HasOne(x => x.OrderLine).WithMany().HasForeignKey(x => x.OrderLineId);
+            e.HasOne(x => x.Material).WithMany().HasForeignKey(x => x.MaterialId);
+            e.HasOne(x => x.Batch).WithMany().HasForeignKey(x => x.BatchId);
+        });
+
+        // --- QualityCheck ---
+        modelBuilder.Entity<QualityCheck>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.ReceiptLineId).IsUnique();
+            e.HasIndex(x => new { x.ResolutionAction, x.CheckedAt });
+            e.Property(x => x.CheckedQty).HasColumnType("decimal(18,4)");
+            e.Property(x => x.Result).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.ExceptionReason).HasConversion<string>().HasMaxLength(30);
+            e.Property(x => x.Note).HasMaxLength(512);
+            e.Property(x => x.PhotoIdsJson).IsRequired();
+            e.Property(x => x.OperatorName).HasMaxLength(128).IsRequired();
+            e.Property(x => x.CheckedAt).HasColumnType("timestamptz");
+            e.Property(x => x.ResolutionAction).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.ResolutionNote).HasMaxLength(512);
+            e.Property(x => x.ResolvedByName).HasMaxLength(128);
+            e.Property(x => x.ResolvedAt).HasColumnType("timestamptz");
+            e.HasOne(x => x.ReceiptLine).WithOne().HasForeignKey<QualityCheck>(x => x.ReceiptLineId);
+        });
+
+        // --- PutawayRecord ---
+        modelBuilder.Entity<PutawayRecord>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.ReceiptLineId).IsUnique();
+            e.HasIndex(x => x.ToLocationId);
+            e.HasIndex(x => x.PutawayAt);
+            e.Property(x => x.Quantity).HasColumnType("decimal(18,4)");
+            e.Property(x => x.OperatorName).HasMaxLength(128).IsRequired();
+            e.Property(x => x.PutawayAt).HasColumnType("timestamptz");
+            e.HasOne(x => x.ReceiptLine).WithOne().HasForeignKey<PutawayRecord>(x => x.ReceiptLineId);
+        });
+
+        // --- StockSubject ---
+        modelBuilder.Entity<StockSubject>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.WarehouseId, x.MaterialId, x.BatchId, x.Status }).IsUnique();
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(30);
+            e.Property(x => x.Uom).HasMaxLength(10).IsRequired();
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId);
+            e.HasOne(x => x.Material).WithMany().HasForeignKey(x => x.MaterialId);
+            e.HasOne(x => x.Batch).WithMany().HasForeignKey(x => x.BatchId);
+        });
+
+        // --- PhysicalInventory ---
+        modelBuilder.Entity<PhysicalInventory>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.LocationId, x.SubjectId }).IsUnique();
+            e.Property(x => x.Quantity).HasColumnType("decimal(18,4)");
+            e.HasOne(x => x.Location).WithMany().HasForeignKey(x => x.LocationId);
+            e.HasOne(x => x.Subject).WithMany().HasForeignKey(x => x.SubjectId);
+        });
+
+        // --- TxnGroup ---
+        modelBuilder.Entity<TxnGroup>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.GroupNo).IsUnique();
+            e.Property(x => x.GroupNo).HasMaxLength(64).IsRequired();
+            e.Property(x => x.Type).HasConversion<string>().HasMaxLength(30);
+            e.Property(x => x.CreatedAt).HasColumnType("timestamptz");
+        });
+
+        // --- StockLedger ---
+        modelBuilder.Entity<StockLedger>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.TxnGroupId, x.Seq }).IsUnique();
+            e.HasIndex(x => x.SubjectId);
+            e.HasIndex(x => x.LocationId);
+            e.HasIndex(x => x.OccurredAt);
+            e.Property(x => x.Quantity).HasColumnType("decimal(18,4)");
+            e.Property(x => x.BalanceBefore).HasColumnType("decimal(18,4)");
+            e.Property(x => x.BalanceAfter).HasColumnType("decimal(18,4)");
+            e.Property(x => x.Reason).HasConversion<string>().HasMaxLength(30);
+            e.Property(x => x.SourceDocType).HasMaxLength(64);
+            e.Property(x => x.SourceDocNo).HasMaxLength(64);
+            e.Property(x => x.OccurredAt).HasColumnType("timestamptz");
+            e.HasOne(x => x.TxnGroup).WithMany().HasForeignKey(x => x.TxnGroupId);
+        });
+
+        // --- Attachment ---
+        modelBuilder.Entity<Attachment>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.BizType, x.BizId });
+            e.HasIndex(x => x.UploadedBy);
+            e.Property(x => x.FileName).HasMaxLength(256).IsRequired();
+            e.Property(x => x.MimeType).HasMaxLength(80).IsRequired();
+            e.Property(x => x.Path).HasMaxLength(512).IsRequired();
+            e.Property(x => x.BizType).HasMaxLength(30);
+            e.Property(x => x.UploadedByName).HasMaxLength(128).IsRequired();
+            e.Property(x => x.UploadedAt).HasColumnType("timestamptz");
+        });
+
+        // --- PrintJob ---
+        modelBuilder.Entity<PrintJob>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.BizType, x.BizId, x.CreatedAt });
+            e.Property(x => x.BizType).HasMaxLength(30);
+            e.Property(x => x.TemplateCode).HasMaxLength(64).IsRequired();
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.FilePath).HasMaxLength(512);
+            e.Property(x => x.ErrorCode).HasMaxLength(64);
+            e.Property(x => x.ErrorMessage).HasMaxLength(512);
+            e.Property(x => x.CreatedByName).HasMaxLength(128).IsRequired();
+            e.Property(x => x.CreatedAt).HasColumnType("timestamptz");
+            e.Property(x => x.UpdatedAt).HasColumnType("timestamptz");
+        });
+
+        // --- PrintJobItem ---
+        modelBuilder.Entity<PrintJobItem>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.PrintJobId, x.Seq }).IsUnique();
+            e.Property(x => x.LabelType).HasMaxLength(10).IsRequired();
+            e.Property(x => x.Content).IsRequired();
+            e.Property(x => x.ReadableText).IsRequired();
+            e.Property(x => x.Quantity).HasColumnType("decimal(18,4)");
+            e.HasOne(x => x.PrintJob).WithMany(x => x.Items).HasForeignKey(x => x.PrintJobId);
         });
 
         // === Seed data ===
@@ -238,6 +462,13 @@ public class AWmsDbContext : DbContext
         var permRouteInbound = Guid.Parse("10000000-0000-0000-0000-000000000001");
         var permMenuInbound = Guid.Parse("10000000-0000-0000-0000-000000000002");
         var permActionReceivingCreate = Guid.Parse("10000000-0000-0000-0000-000000000003");
+        var permActionInboundOrderCreate = Guid.Parse("10000000-0000-0000-0000-000000000023");
+        var permActionInboundOrderVoid = Guid.Parse("10000000-0000-0000-0000-000000000024");
+        var permActionQualityCheck = Guid.Parse("10000000-0000-0000-0000-000000000025");
+        var permActionQualityResolve = Guid.Parse("10000000-0000-0000-0000-000000000026");
+        var permActionPutawayCreate = Guid.Parse("10000000-0000-0000-0000-000000000027");
+        var permActionAttachmentUpload = Guid.Parse("10000000-0000-0000-0000-000000000028");
+        var permActionPrintCreate = Guid.Parse("10000000-0000-0000-0000-000000000029");
         var permRouteMasterData = Guid.Parse("10000000-0000-0000-0000-000000000004");
         var permMenuMasterData = Guid.Parse("10000000-0000-0000-0000-000000000005");
         var permActionMaterialCreate = Guid.Parse("10000000-0000-0000-0000-000000000006");
@@ -263,6 +494,13 @@ public class AWmsDbContext : DbContext
             new Permission { Id = permRouteInbound, Code = "route.inbound", Name = "入库模块", Category = PermissionCategory.ROUTE, ModuleCode = "inbound" },
             new Permission { Id = permMenuInbound, Code = "menu.inbound", Name = "入库菜单", Category = PermissionCategory.MENU, ModuleCode = "inbound" },
             new Permission { Id = permActionReceivingCreate, Code = "action.receiving.create", Name = "创建收货", Category = PermissionCategory.ACTION, ModuleCode = "inbound" },
+            new Permission { Id = permActionInboundOrderCreate, Code = "action.inbound-order.create", Name = "创建入库单", Category = PermissionCategory.ACTION, ModuleCode = "inbound" },
+            new Permission { Id = permActionInboundOrderVoid, Code = "action.inbound-order.void", Name = "作废入库单", Category = PermissionCategory.ACTION, ModuleCode = "inbound" },
+            new Permission { Id = permActionQualityCheck, Code = "action.quality.check", Name = "PDA质检", Category = PermissionCategory.ACTION, ModuleCode = "inbound" },
+            new Permission { Id = permActionQualityResolve, Code = "action.quality.resolve", Name = "处理质检异常", Category = PermissionCategory.ACTION, ModuleCode = "inbound" },
+            new Permission { Id = permActionPutawayCreate, Code = "action.putaway.create", Name = "PDA上架", Category = PermissionCategory.ACTION, ModuleCode = "inbound" },
+            new Permission { Id = permActionAttachmentUpload, Code = "action.attachment.upload", Name = "上传业务照片", Category = PermissionCategory.ACTION, ModuleCode = "inbound" },
+            new Permission { Id = permActionPrintCreate, Code = "action.print.create", Name = "生成固定模板打印", Category = PermissionCategory.ACTION, ModuleCode = "inbound" },
             new Permission { Id = permRouteMasterData, Code = "route.master-data", Name = "主数据模块", Category = PermissionCategory.ROUTE, ModuleCode = "master-data" },
             new Permission { Id = permMenuMasterData, Code = "menu.master-data", Name = "主数据菜单", Category = PermissionCategory.MENU, ModuleCode = "master-data" },
             new Permission { Id = permActionMaterialCreate, Code = "action.material.create", Name = "创建物料", Category = PermissionCategory.ACTION, ModuleCode = "master-data" },
@@ -313,14 +551,25 @@ public class AWmsDbContext : DbContext
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000055"), RoleId = adminId, PermissionId = permActionLocationDelete },
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000056"), RoleId = adminId, PermissionId = permActionSourceCreate },
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000057"), RoleId = adminId, PermissionId = permActionSourceEdit },
-            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000058"), RoleId = adminId, PermissionId = permActionSourceDelete }
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000058"), RoleId = adminId, PermissionId = permActionSourceDelete },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000059"), RoleId = adminId, PermissionId = permActionInboundOrderCreate },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000060"), RoleId = adminId, PermissionId = permActionInboundOrderVoid },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000061"), RoleId = adminId, PermissionId = permActionQualityCheck },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000062"), RoleId = adminId, PermissionId = permActionQualityResolve },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000063"), RoleId = adminId, PermissionId = permActionPutawayCreate },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000064"), RoleId = adminId, PermissionId = permActionAttachmentUpload },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000065"), RoleId = adminId, PermissionId = permActionPrintCreate }
         );
 
         // OPERATOR：仅入库（固定 GUID 3000…021+）
         modelBuilder.Entity<RolePermission>().HasData(
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000021"), RoleId = operatorId, PermissionId = permRouteInbound },
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000022"), RoleId = operatorId, PermissionId = permMenuInbound },
-            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000023"), RoleId = operatorId, PermissionId = permActionReceivingCreate }
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000023"), RoleId = operatorId, PermissionId = permActionReceivingCreate },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000066"), RoleId = operatorId, PermissionId = permActionQualityCheck },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000067"), RoleId = operatorId, PermissionId = permActionPutawayCreate },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000068"), RoleId = operatorId, PermissionId = permActionAttachmentUpload },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000069"), RoleId = operatorId, PermissionId = permActionPrintCreate }
         );
 
         // SUPERVISOR：入库 + 主数据（固定 GUID 3000…031+）
@@ -343,7 +592,14 @@ public class AWmsDbContext : DbContext
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000046"), RoleId = supervisorId, PermissionId = permActionLocationDelete },
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000047"), RoleId = supervisorId, PermissionId = permActionSourceCreate },
             new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000048"), RoleId = supervisorId, PermissionId = permActionSourceEdit },
-            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000049"), RoleId = supervisorId, PermissionId = permActionSourceDelete }
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000049"), RoleId = supervisorId, PermissionId = permActionSourceDelete },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000070"), RoleId = supervisorId, PermissionId = permActionInboundOrderCreate },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000071"), RoleId = supervisorId, PermissionId = permActionInboundOrderVoid },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000072"), RoleId = supervisorId, PermissionId = permActionQualityCheck },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000073"), RoleId = supervisorId, PermissionId = permActionQualityResolve },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000074"), RoleId = supervisorId, PermissionId = permActionPutawayCreate },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000075"), RoleId = supervisorId, PermissionId = permActionAttachmentUpload },
+            new RolePermission { Id = Guid.Parse("30000000-0000-0000-0000-000000000076"), RoleId = supervisorId, PermissionId = permActionPrintCreate }
         );
 
         // Menus（固定 GUID 2000…）
@@ -352,7 +608,9 @@ public class AWmsDbContext : DbContext
             new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000002"), Code = "menu.inbound", TitleKey = "nav.inbound", GroupKey = "nav.group.operations", ModuleCode = "inbound", IconKey = "inbox", Path = "/inbound", Surface = Surface.WEB, Sort = 20, RequiredPermissionCode = "route.inbound" },
             new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000003"), Code = "menu.master-data", TitleKey = "nav.master-data", GroupKey = "nav.group.settings", ModuleCode = "master-data", IconKey = "database", Path = "/master-data", Surface = Surface.WEB, Sort = 30, RequiredPermissionCode = "route.master-data" },
             new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000004"), Code = "menu.system", TitleKey = "nav.system", GroupKey = "nav.group.settings", ModuleCode = "system", IconKey = "settings", Path = "/system", Surface = Surface.WEB, Sort = 40, RequiredPermissionCode = "route.system" },
-            new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000005"), Code = "pda.receiving", TitleKey = "pda.receiving", ModuleCode = "inbound", Sort = 10, Surface = Surface.PDA, RequiredPermissionCode = "route.inbound" }
+            new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000005"), Code = "pda.receiving", TitleKey = "pda.receiving", ModuleCode = "inbound", Sort = 10, Surface = Surface.PDA, RequiredPermissionCode = "action.receiving.create" },
+            new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000006"), Code = "pda.qc", TitleKey = "pda.qc", ModuleCode = "inbound", Sort = 20, Surface = Surface.PDA, RequiredPermissionCode = "action.quality.check" },
+            new MenuDefinition { Id = Guid.Parse("20000000-0000-0000-0000-000000000007"), Code = "pda.putaway", TitleKey = "pda.putaway", ModuleCode = "inbound", Sort = 30, Surface = Surface.PDA, RequiredPermissionCode = "action.putaway.create" }
         );
     }
 }

@@ -69,9 +69,23 @@ public sealed class ApiTestFixture : IAsyncLifetime
         // 每个测试前清空业务表，保持隔离（种子/权限等基础数据保留）
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AWmsDbContext>();
+        db.StockLedgers.RemoveRange(db.StockLedgers);
+        db.TxnGroups.RemoveRange(db.TxnGroups);
+        db.PutawayRecords.RemoveRange(db.PutawayRecords);
+        db.QualityChecks.RemoveRange(db.QualityChecks);
+        db.ReceiptLines.RemoveRange(db.ReceiptLines);
+        db.Receipts.RemoveRange(db.Receipts);
+        db.UniqueCodes.RemoveRange(db.UniqueCodes);
+        db.InboundOrderLines.RemoveRange(db.InboundOrderLines);
+        db.InboundOrders.RemoveRange(db.InboundOrders);
+        db.PhysicalInventories.RemoveRange(db.PhysicalInventories);
+        db.StockSubjects.RemoveRange(db.StockSubjects);
+        db.PrintJobItems.RemoveRange(db.PrintJobItems);
+        db.PrintJobs.RemoveRange(db.PrintJobs);
+        db.Attachments.RemoveRange(db.Attachments);
+        db.Locations.RemoveRange(db.Locations);
         db.Materials.RemoveRange(db.Materials);
         db.Warehouses.RemoveRange(db.Warehouses);
-        db.Locations.RemoveRange(db.Locations);
         db.Sources.RemoveRange(db.Sources);
         db.Batches.RemoveRange(db.Batches);
         db.ImportTasks.RemoveRange(db.ImportTasks);

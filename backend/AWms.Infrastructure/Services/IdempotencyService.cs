@@ -36,6 +36,7 @@ public class IdempotencyService
         var record = new IdempotencyRecord
         {
             Key = key,
+            Status = AWms.Domain.Enums.IdempotencyStatus.PENDING,
             ResponseJson = string.Empty,
             StatusCode = 0,
             CreatedAt = now,
@@ -65,6 +66,7 @@ public class IdempotencyService
             return;
         record.StatusCode = statusCode;
         record.ResponseJson = responseJson;
+        record.Status = AWms.Domain.Enums.IdempotencyStatus.COMPLETED;
         await _db.SaveChangesAsync(ct);
     }
 }
