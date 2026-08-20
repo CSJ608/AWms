@@ -36,7 +36,7 @@ describe('菜单与权限过滤', () => {
   })
 
   it('作业员（OPERATOR）：无 menu.master-data → 主数据菜单不显示；直达物料页 → 无权限页', async () => {
-    renderApp('/login')
+    const view = renderApp('/login')
     const user = userEvent.setup()
     await user.type(screen.getByLabelText(/用户名/), 'wang01')
     await user.type(screen.getByLabelText(/密码/), '123456')
@@ -50,8 +50,9 @@ describe('菜单与权限过滤', () => {
     expect(screen.queryByText('批次')).not.toBeInTheDocument()
 
     // 无 route.master-data → 直达物料页显示无权限页（路由权限守卫）
-    window.history.pushState({}, '', '/web/master/materials')
-    window.dispatchEvent(new PopStateEvent('popstate'))
+    view.unmount()
+    seedSession(makeOperatorSession())
+    renderApp('/web/master/materials')
     expect(await screen.findByText('无权限')).toBeInTheDocument()
   })
 

@@ -4,10 +4,13 @@
  */
 import { request } from './client'
 import type {
-  BatchItem, ExportRequest, FieldMeta, ImportTask, ListQuery, LoginRequest, LoginResponse,
+  AttachmentItem, BatchItem, ExportRequest, FieldMeta, ImportTask, InboundOrder, InboundOrderCreateRequest,
+  InboundOrderVoidRequest, ListQuery, LocationRecommendation, LoginRequest, LoginResponse,
   LocationCreateRequest, LocationItem, LocationUpdateRequest, MaterialCreateRequest, MaterialItem,
-  MaterialUpdateRequest, PageResult, RefreshResponse, SearchRequest, SourceCreateRequest, SourceItem,
-  SourceUpdateRequest, WarehouseCreateRequest, WarehouseItem, WarehouseUpdateRequest,
+  MaterialUpdateRequest, PageResult, PrintJob, PutawayRecordCreateRequest, PutawayTodo, QualityCheckRequest,
+  QualityExceptionItem, QualityResolveRequest, QualityTodo, Receipt, ReceiptCreateRequest, RefreshResponse,
+  ScanParseRequest, ScanResult, SearchRequest, SourceCreateRequest, SourceItem, SourceUpdateRequest,
+  WarehouseCreateRequest, WarehouseItem, WarehouseUpdateRequest,
 } from './types'
 
 // ── 认证 ──────────────────────────────────────────────
@@ -76,6 +79,81 @@ export const apiQuickSearchBatches = (keyword: string, pageSize = 10) =>
 export const apiGetBatch = (id: string) => request<BatchItem>(`/batches/${id}`)
 export const apiListMaterialBatches = (materialId: string, query: ListQuery) =>
   request<PageResult<BatchItem>>(`/materials/${materialId}/batches/search`, { method: 'POST', body: toSearchBody(query) })
+
+// ── 入库单 ────────────────────────────────────────────
+export const apiCreateInboundOrder = (body: InboundOrderCreateRequest, idempotencyKey: string) =>
+  request<InboundOrder>('/inbound-orders', { method: 'POST', body, idempotencyKey })
+export const apiListInboundOrders = (query: ListQuery) =>
+  request<PageResult<InboundOrder>>('/inbound-orders/search', { method: 'POST', body: toSearchBody(query) })
+export const apiGetInboundOrder = (id: string) =>
+  request<InboundOrder>(`/inbound-orders/${id}`)
+export const apiVoidInboundOrder = (id: string, body: InboundOrderVoidRequest, idempotencyKey: string) =>
+  request<InboundOrder>(`/inbound-orders/${id}/void`, { method: 'POST', body, idempotencyKey })
+
+// ── 收货 / 质检 / 上架 ────────────────────────────────
+export const apiCreateReceipt = (body: ReceiptCreateRequest, idempotencyKey: string) =>
+  request<Receipt>('/receipts', { method: 'POST', body, idempotencyKey })
+export const apiListReceipts = (query: ListQuery) =>
+  request<PageResult<Receipt>>('/receipts/search', { method: 'POST', body: toSearchBody(query) })
+export const apiGetReceipt = (id: string) =>
+  request<Receipt>(`/receipts/${id}`)
+export const apiPrintReceipt = (id: string, idempotencyKey: string) =>
+  request<PrintJob>(`/receipts/${id}/print`, { method: 'POST', idempotencyKey })
+export const apiListQualityTodos = (query: ListQuery) =>
+  request<PageResult<QualityTodo>>('/quality-todos/search', { method: 'POST', body: toSearchBody(query) })
+export const apiSubmitQualityCheck = (lineId: string, body: QualityCheckRequest, idempotencyKey: string) =>
+  request<void>(`/receipt-lines/${lineId}/quality-check`, { method: 'POST', body, idempotencyKey })
+export const apiListQualityExceptions = (query: ListQuery) =>
+  request<PageResult<QualityExceptionItem>>('/quality-checks/search', { method: 'POST', body: toSearchBody(query) })
+export const apiResolveQualityException = (checkId: string, body: QualityResolveRequest, idempotencyKey: string) =>
+  request<QualityExceptionItem>(`/quality-checks/${checkId}/resolve`, { method: 'POST', body, idempotencyKey })
+export const apiListPutawayTodos = (query: ListQuery) =>
+  request<PageResult<PutawayTodo>>('/putaway-todos/search', { method: 'POST', body: toSearchBody(query) })
+export const apiGetPutawayRecommendations = (receiptLineId: string) =>
+  request<LocationRecommendation[]>(`/putaway-todos/${receiptLineId}/recommendations`)
+export const apiCreatePutawayRecord = (body: PutawayRecordCreateRequest, idempotencyKey: string) =>
+  request<void>('/putaway-records', { method: 'POST', body, idempotencyKey })
+
+// ── 扫码 / 附件 / 打印 ────────────────────────────────
+export const apiParseScan = (body: ScanParseRequest) =>
+  request<ScanResult>('/scan/parse', { method: 'POST', body })
+export const apiUploadAttachment = (file: File, bizType?: string) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  if (bizType) fd.append('bizType', bizType)
+  return request<AttachmentItem>('/attachments', { method: 'POST', formData: fd })
+}
+export const apiListAttachments = (query: {
+  bizType?: string
+  bizId?: string
+  uploadedBy?: string
+  dateFrom?: string
+  dateTo?: string
+  page?: number
+  pageSize?: number
+}) => request<PageResult<AttachmentItem>>('/attachments', { query })
+export const apiPrintInboundOrderQr = (inboundOrderId: string, idempotencyKey: string) =>
+  request<PrintJob>('/print/inbound-order-qr', { method: 'POST', body: { inboundOrderId }, idempotencyKey })
+export const apiPrintExternalLabels = (
+  body: { items: Array<{ materialId: string; count: number; inboundOrderLineId?: string; rt?: 'S' | 'W'; rc?: string }> },
+  idempotencyKey: string,
+) => request<PrintJob>('/print/external-labels', { method: 'POST', body, idempotencyKey })
+export const apiPrintUniqueLabels = (
+  body: { inboundOrderLineId: string; count: number; qtyPerCode?: string },
+  idempotencyKey: string,
+) => request<PrintJob>('/print/unique-labels', { method: 'POST', body, idempotencyKey })
+export const apiPrintBatchLabels = (body: { receiptLineId: string; qtyPerLabel?: string }, idempotencyKey: string) =>
+  request<PrintJob>('/print/batch-labels', { method: 'POST', body, idempotencyKey })
+export const apiPrintBatchLabelOne = (body: { receiptLineId: string; quantity: string }, idempotencyKey: string) =>
+  request<PrintJob>('/print/batch-label-one', { method: 'POST', body, idempotencyKey })
+export const apiSearchPrintJobs = (query: ListQuery) =>
+  request<PageResult<PrintJob>>('/print/jobs/search', { method: 'POST', body: toSearchBody(query) })
+export const apiGetPrintJob = (id: string) =>
+  request<PrintJob>(`/print/jobs/${id}`)
+export const apiRetryPrintJob = (id: string, idempotencyKey: string) =>
+  request<PrintJob>(`/print/jobs/${id}/retry`, { method: 'POST', idempotencyKey })
+export const apiDownloadPrintJobFile = (id: string) =>
+  request<Response>(`/print/jobs/${id}/file`, { blob: true })
 
 // ── 导入导出 ──────────────────────────────────────────
 export const apiDownloadImportTemplate = (moduleCode: string) =>

@@ -37,6 +37,7 @@ export const WEB_ROUTES: WebRouteEntry[] = [
  */
 export function menuTarget(menu: { path: string; moduleCode: string }): string {
   if (menu.path.startsWith('/web/')) return menu.path
+  if (menu.moduleCode === 'inbound') return '/inbound/orders'
   const first = WEB_ROUTES.find((r) => r.moduleCode === menu.moduleCode)
   return first ? `/web/${first.path}` : menu.path
 }
@@ -64,6 +65,22 @@ export function RequirePermission({ moduleCode, children }: { moduleCode: string
   const { t } = useTranslation()
 
   if (!hasPerm(routePermission(moduleCode))) {
+    return (
+      <div className="flex h-full min-h-64 flex-col items-center justify-center gap-1 text-center">
+        <p className="text-base font-medium">{t('common.noPermission')}</p>
+        <p className="text-sm text-muted-foreground">{t('common.noPermissionDesc')}</p>
+      </div>
+    )
+  }
+  return children
+}
+
+/** 入库深链接守卫：/inbound/* 必须持 route.inbound。 */
+export function RequireInboundRoute({ children }: { children: ReactNode }) {
+  const { hasPerm } = useAuth()
+  const { t } = useTranslation()
+
+  if (!hasPerm('route.inbound')) {
     return (
       <div className="flex h-full min-h-64 flex-col items-center justify-center gap-1 text-center">
         <p className="text-base font-medium">{t('common.noPermission')}</p>

@@ -32,6 +32,7 @@ export function AppLayout() {
 
   const current = menus.find((m) => {
     const target = menuTarget(m)
+    if (m.moduleCode === 'inbound') return location.pathname.startsWith('/inbound')
     return target !== '/' && location.pathname.startsWith(target)
   })
 

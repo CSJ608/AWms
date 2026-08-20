@@ -7,7 +7,8 @@ import type {
 } from '../api/types'
 import { ApiErrorImpl } from '../api/client'
 import {
-  seedBatches, seedLocations, seedMaterials, seedSources, seedUsers, seedWarehouses,
+  seedAttachments, seedBatches, seedInboundOrders, seedLocations, seedMaterials, seedPrintJobs,
+  seedQualityChecks, seedReceipts, seedSources, seedUsers, seedWarehouses,
 } from './seed'
 
 export interface MockDb {
@@ -16,6 +17,12 @@ export interface MockDb {
   locations: typeof seedLocations
   sources: typeof seedSources
   batches: typeof seedBatches
+  inboundOrders: typeof seedInboundOrders
+  receipts: typeof seedReceipts
+  qualityChecks: typeof seedQualityChecks
+  attachments: typeof seedAttachments
+  printJobs: typeof seedPrintJobs
+  putawayVersions: Record<string, number>
 }
 
 export function createDb(): MockDb {
@@ -25,6 +32,12 @@ export function createDb(): MockDb {
     locations: structuredClone(seedLocations),
     sources: structuredClone(seedSources),
     batches: structuredClone(seedBatches),
+    inboundOrders: structuredClone(seedInboundOrders),
+    receipts: structuredClone(seedReceipts),
+    qualityChecks: structuredClone(seedQualityChecks),
+    attachments: structuredClone(seedAttachments),
+    printJobs: structuredClone(seedPrintJobs),
+    putawayVersions: { 'rl-002': 3 },
   }
 }
 
