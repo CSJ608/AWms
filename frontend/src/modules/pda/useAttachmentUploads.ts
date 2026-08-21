@@ -16,8 +16,27 @@ export interface AttachmentUploadEntry {
   error: string | null
 }
 
+export interface AttachmentCleanupEntry extends AttachmentUploadEntry {
+  taskId: string
+  taskLabel: string
+}
+
 export function useAttachmentUploads(bizType: AttachmentBizType, maxCount = 3) {
   const [entries, setEntries] = useState<AttachmentUploadEntry[]>([])
+  const [cleanupEntries, setCleanupEntries] = useState<AttachmentCleanupEntry[]>([])
+
+  const deleteCleanupEntry = useCallback(async (entry: AttachmentCleanupEntry) => {
+    if (!entry.attachment || !entry.deleteKey) return
+    try {
+      await apiDeleteAttachment(entry.attachment.id, entry.deleteKey)
+      setCleanupEntries((current) => current.filter((item) => item.id !== entry.id))
+    } catch (reason) {
+      const error = parseApiError(reason)
+      setCleanupEntries((current) => current.map((item) => item.id === entry.id
+        ? { ...item, status: 'delete-failed', error: error.message }
+        : item))
+    }
+  }, [])
 
   const send = useCallback(async (entry: AttachmentUploadEntry) => {
     setEntries((current) => current.map((item) => item.id === entry.id
@@ -84,5 +103,34 @@ export function useAttachmentUploads(bizType: AttachmentBizType, maxCount = 3) {
   const hasFailures = entries.some((entry) => entry.status === 'upload-failed' || entry.status === 'delete-failed')
   const clear = useCallback(() => setEntries([]), [])
 
-  return { entries, uploaded, busy, hasFailures, maxCount, add, retry, remove, clear }
+  const discard = useCallback((task: { id: string; label: string }) => {
+    const pending = entries.flatMap<AttachmentCleanupEntry>((entry) => {
+      if (!entry.attachment) return []
+      return [{
+        ...entry,
+        taskId: task.id,
+        taskLabel: task.label,
+        status: 'deleting',
+        deleteKey: entry.deleteKey ?? genIdempotencyKey(),
+        error: null,
+      }]
+    })
+    setEntries([])
+    if (pending.length === 0) return
+    setCleanupEntries((current) => [...current, ...pending])
+    pending.forEach((entry) => void deleteCleanupEntry(entry))
+  }, [deleteCleanupEntry, entries])
+
+  const retryCleanup = useCallback((id: string) => {
+    const entry = cleanupEntries.find((item) => item.id === id)
+    if (!entry || entry.status !== 'delete-failed') return
+    const deleting = { ...entry, status: 'deleting' as const, error: null }
+    setCleanupEntries((current) => current.map((item) => item.id === id ? deleting : item))
+    void deleteCleanupEntry(deleting)
+  }, [cleanupEntries, deleteCleanupEntry])
+
+  return {
+    entries, uploaded, busy, hasFailures, maxCount, add, retry, remove, clear,
+    cleanupEntries, discard, retryCleanup,
+  }
 }

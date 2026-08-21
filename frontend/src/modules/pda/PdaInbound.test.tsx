@@ -132,6 +132,71 @@ describe('PDA 菜单与入库作业', () => {
     expect(keys[2]).not.toBe(keys[1])
   })
 
+  it('质检任务 A 并发失效后隔离草稿，删除失败可重试且任务 B 不继承附件', async () => {
+    seedSession(makeOperatorSession())
+    let deleteAttempts = 0
+    const submitted: Array<{ lineId: string; body: { exceptionReason?: string; note?: string | null; photoIds?: string[] } }> = []
+    server.use(
+      http.post('/api/receipt-lines/:lineId/quality-check', async ({ request, params }) => {
+        const lineId = String(params.lineId)
+        if (lineId === MOCK_IDS.receiptLine4) {
+          const line = db.receipts.flatMap((receipt) => receipt.lines).find((item) => item.id === lineId)!
+          line.status = 'CHECKED'
+          return HttpResponse.json({ code: 'QC_STATUS_INVALID', message: '该行已质检', data: null }, { status: 409 })
+        }
+        submitted.push({ lineId, body: await request.json() as { exceptionReason?: string; note?: string | null; photoIds?: string[] } })
+        return new HttpResponse(null, { status: 204 })
+      }),
+      http.delete('/api/attachments/:id', ({ params }) => {
+        deleteAttempts += 1
+        if (deleteAttempts === 1) {
+          return HttpResponse.json({ code: 'INTERNAL_ERROR', message: '清理暂时失败', data: null }, { status: 500 })
+        }
+        db.attachments = db.attachments.filter((item) => item.id !== String(params.id))
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderApp('/pda/qc')
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByText('RCP-20260819-0004'))
+    await user.click(screen.getByRole('button', { name: '上报异常' }))
+    await user.selectOptions(screen.getByRole('combobox'), 'OTHER')
+    await user.type(screen.getByPlaceholderText('备注'), '任务 A 外箱异常')
+    const firstInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(firstInput, { target: { files: [new File(['a'], 'task-a.jpg', { type: 'image/jpeg' })] } })
+    await screen.findByRole('img', { name: 'task-a.jpg' })
+    const taskAAttachmentId = db.attachments.find((item) => item.fileName === 'task-a.jpg')!.id
+
+    await user.click(screen.getByTestId('quality-exception-submit'))
+    expect(await screen.findByText('该行已质检')).toBeInTheDocument()
+    expect(await screen.findByText('清理暂时失败')).toBeInTheDocument()
+
+    await user.click(screen.getByText('RCP-20260819-0005'))
+    await user.click(screen.getByRole('button', { name: '上报异常' }))
+    expect(screen.getByRole('combobox')).toHaveValue('DAMAGED')
+    expect(screen.getByPlaceholderText('备注')).toHaveValue('')
+    expect(screen.getByText('照片 0/3')).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: 'task-a.jpg' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '重试清理' }))
+    await waitFor(() => expect(screen.queryByTestId('attachment-cleanup')).not.toBeInTheDocument())
+    expect(db.attachments.some((item) => item.id === taskAAttachmentId)).toBe(false)
+
+    const secondInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(secondInput, { target: { files: [new File(['b'], 'task-b.jpg', { type: 'image/jpeg' })] } })
+    await screen.findByRole('img', { name: 'task-b.jpg' })
+    const taskBAttachmentId = db.attachments.find((item) => item.fileName === 'task-b.jpg')!.id
+    await user.click(screen.getByTestId('quality-exception-submit'))
+    await screen.findByText('异常已上报')
+
+    expect(submitted).toEqual([{
+      lineId: MOCK_IDS.receiptLine5,
+      body: expect.objectContaining({ exceptionReason: 'DAMAGED', note: null, photoIds: [taskBAttachmentId] }),
+    }])
+    expect(submitted[0].body.photoIds).not.toContain(taskAAttachmentId)
+  })
+
   it('质检扫批次标签按多条选择、1 条直达、0 条提示处理', async () => {
     seedSession(makeOperatorSession())
     renderApp('/pda/qc')

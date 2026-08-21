@@ -89,6 +89,34 @@ describe('MSW 入库链契约边界', () => {
     expect(replayed).toEqual(first)
   })
 
+  it.each([
+    ['入库单创建', '/inbound-orders', { warehouseId: MOCK_IDS.warehouse1, type: 'OT', lines: [{ materialId: MOCK_IDS.material2, expectedQty: '1.0000' }] }],
+    ['入库单作废', `/inbound-orders/${MOCK_IDS.inboundOrder1}/void`, { reason: '测试作废' }],
+    ['收货提交', '/receipts', { warehouseId: MOCK_IDS.warehouse1, stagingLocationId: MOCK_IDS.locationStaging1, sourceDocType: 'OT', lines: [{ materialId: MOCK_IDS.material2, quantity: '1.0000' }] }],
+    ['收货回执打印', `/receipts/${MOCK_IDS.receipt1}/print`, undefined],
+    ['质检提交', `/receipt-lines/${MOCK_IDS.receiptLine4}/quality-check`, { result: 'PASS', checkedQty: '40.0000' }],
+    ['质检异常处理', `/quality-checks/${MOCK_IDS.quality1}/resolve`, { action: 'PASS' }],
+    ['上架提交', '/putaway-records', { receiptLineId: MOCK_IDS.receiptLine2, toLocationId: MOCK_IDS.locationDefault1, scannedLocationCode: 'DEF-01', expectedInventoryVersion: 3 }],
+    ['入库单二维码', '/print/inbound-order-qr', { inboundOrderId: MOCK_IDS.inboundOrder1 }],
+    ['外标签', '/print/external-labels', { items: [{ materialId: MOCK_IDS.material1, count: 1, inboundOrderLineId: MOCK_IDS.inboundOrderLine1 }] }],
+    ['唯一码标签', '/print/unique-labels', { inboundOrderLineId: MOCK_IDS.inboundOrderLine1, count: 1, qtyPerCode: '1.0000' }],
+    ['批次标签批量', '/print/batch-labels', { receiptLineId: MOCK_IDS.receiptLine2, qtyPerLabel: '10.0000' }],
+    ['批次标签单张', '/print/batch-label-one', { receiptLineId: MOCK_IDS.receiptLine2, quantity: '10.0000' }],
+  ])('%s 缺少幂等键时在修改 Mock 状态前拒绝', async (_name, path, body) => {
+    const before = structuredClone(db)
+    await expect(request<unknown>(path, { method: 'POST', ...(body === undefined ? {} : { body }) }))
+      .rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400, message: 'Idempotency-Key 必填' })
+    expect(db).toEqual(before)
+  })
+
+  it('打印 retry 缺少幂等键时不修改失败作业', async () => {
+    const failed = await apiPrintBatchLabels({ receiptLineId: MOCK_IDS.receiptLine2, qtyPerLabel: '13.0000' }, 'prepare-failed-job')
+    const before = structuredClone(db)
+    await expect(request<unknown>(`/print/jobs/${failed.id}/retry`, { method: 'POST' }))
+      .rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400, message: 'Idempotency-Key 必填' })
+    expect(db).toEqual(before)
+  })
+
   it('非法库位和 VERSION_CONFLICT 均按契约返回', async () => {
     await expect(apiCreatePutawayRecord({
       receiptLineId: MOCK_IDS.receiptLine2,

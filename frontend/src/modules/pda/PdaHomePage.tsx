@@ -540,19 +540,27 @@ function QualityPage({ warehouse }: { warehouse: WarehouseContext }) {
   const queryKey = ['pda-quality-todos', warehouse.id]
   const todos = useQuery({ queryKey, queryFn: () => apiListQualityTodos({ warehouseId: warehouse.id, page: 1, pageSize: 50 }) })
   const parse = useMutation({ mutationFn: (content: string) => apiParseScan({ content, context: { warehouseId: warehouse.id } }) })
+  const qualitySubmission = () => {
+    const body = exceptionMode
+      ? { result: 'EXCEPTION' as const, checkedQty: selected!.quantity, exceptionReason: reason, note: note.trim() || null, photoIds: photos.map((item) => item.id) }
+      : { result: 'PASS' as const, checkedQty: selected!.quantity }
+    return { body, fingerprint: `quality:${selected!.receiptLineId}:${JSON.stringify(body)}` }
+  }
+  const resetDraft = () => {
+    setExceptionMode(false)
+    setReason('DAMAGED')
+    setNote('')
+  }
   const submit = useMutation({
     mutationFn: () => {
-      const body = exceptionMode
-        ? { result: 'EXCEPTION' as const, checkedQty: selected!.quantity, exceptionReason: reason, note: note.trim() || null, photoIds: photos.map((item) => item.id) }
-        : { result: 'PASS' as const, checkedQty: selected!.quantity }
-      const fingerprint = `quality:${selected!.receiptLineId}:${JSON.stringify(body)}`
+      const { body, fingerprint } = qualitySubmission()
       return apiSubmitQualityCheck(selected!.receiptLineId, body, getKey(fingerprint)).then(() => fingerprint)
     },
     onSuccess: (fingerprint) => {
       clearKey(fingerprint)
       setDone(exceptionMode ? '异常已上报' : '质检通过')
       setSelected(null)
-      setExceptionMode(false)
+      resetDraft()
       photoUploads.clear()
       void queryClient.invalidateQueries({ queryKey })
     },
@@ -560,7 +568,14 @@ function QualityPage({ warehouse }: { warehouse: WarehouseContext }) {
       const apiError = parseApiError(reason)
       setError(apiError.message)
       if (apiError.code === 'QC_STATUS_INVALID') {
+        const invalidTask = selected
+        if (invalidTask) {
+          const { fingerprint } = qualitySubmission()
+          clearKey(fingerprint)
+          photoUploads.discard({ id: invalidTask.receiptLineId, label: invalidTask.receiptNo })
+        }
         setSelected(null)
+        resetDraft()
         void queryClient.invalidateQueries({ queryKey })
       }
     },
@@ -602,6 +617,7 @@ function QualityPage({ warehouse }: { warehouse: WarehouseContext }) {
           </div>
         )}
         {error && <PdaError message={error} />}
+        <AttachmentCleanupNotice uploads={photoUploads} />
       </div>
     )
   }
@@ -610,6 +626,7 @@ function QualityPage({ warehouse }: { warehouse: WarehouseContext }) {
       <ScanInput placeholder="扫描批次标签" onSubmit={(value) => void locate(value)} disabled={parse.isPending} />
       {done && <PdaSuccess message={done} />}
       {error && <PdaError message={error} />}
+      <AttachmentCleanupNotice uploads={photoUploads} />
       {candidates.length > 0 && <CandidateList items={candidates} onPick={setSelected} />}
       <TodoList loading={todos.isLoading} items={todos.data?.items ?? []} empty="当前仓库无待质检任务" onPick={setSelected} />
     </div>
@@ -823,6 +840,30 @@ function AttachmentUpload({ uploads }: { uploads: ReturnType<typeof useAttachmen
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function AttachmentCleanupNotice({ uploads }: { uploads: ReturnType<typeof useAttachmentUploads> }) {
+  if (uploads.cleanupEntries.length === 0) return null
+  return (
+    <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/10 p-3" data-testid="attachment-cleanup">
+      <p className="text-sm font-medium">失效任务照片清理</p>
+      {uploads.cleanupEntries.map((entry) => (
+        <div key={entry.id} className="flex items-center justify-between gap-2 text-sm">
+          <div className="min-w-0">
+            <p className="truncate">{entry.taskLabel} · {entry.file.name}</p>
+            <p className={entry.status === 'delete-failed' ? 'text-destructive' : 'text-muted-foreground'}>
+              {entry.status === 'delete-failed' ? entry.error : '删除中'}
+            </p>
+          </div>
+          {entry.status === 'delete-failed' && (
+            <Button type="button" size="sm" variant="outline" onClick={() => uploads.retryCleanup(entry.id)}>
+              <RotateCw className="size-3" data-icon />重试清理
+            </Button>
+          )}
+        </div>
+      ))}
     </div>
   )
 }

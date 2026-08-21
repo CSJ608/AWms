@@ -441,6 +441,8 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
     const hit = replay(request)
     if (hit) return hit
     const body = (await request.json()) as InboundOrderCreateRequest
@@ -500,6 +502,8 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
     const hit = replay(request)
     if (hit) return hit
     const order = getById(db.inboundOrders, String(params.id))
@@ -620,6 +624,8 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
     const hit = replay(request)
     if (hit) return hit
     const body = (await request.json()) as ReceiptCreateRequest
@@ -728,6 +734,8 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
     const hit = replay(request)
     if (hit) return hit
     const receipt = getById(db.receipts, String(params.id))
@@ -753,6 +761,8 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
     const hit = replay(request)
     if (hit) return hit
     const found = findReceiptLine(String(params.lineId))
@@ -822,6 +832,8 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
     const hit = replay(request)
     if (hit) return hit
     const check = getById(db.qualityChecks, String(params.checkId))
@@ -872,6 +884,8 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
     const hit = replay(request)
     if (hit) return hit
     const body = (await request.json()) as PutawayRecordCreateRequest
@@ -976,6 +990,8 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
     const hit = replay(request)
     if (hit) return hit
     const body = (await request.json()) as { inboundOrderId: string }
@@ -994,6 +1010,8 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
     const hit = replay(request)
     if (hit) return hit
     const body = (await request.json()) as { items: Array<{ materialId: string; count: number; inboundOrderLineId?: string; rt?: string; rc?: string }> }
@@ -1018,6 +1036,8 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
     const hit = replay(request)
     if (hit) return hit
     const body = (await request.json()) as { inboundOrderLineId: string; count: number; qtyPerCode?: string }
@@ -1050,6 +1070,8 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
     const hit = replay(request)
     if (hit) return hit
     const body = (await request.json()) as { receiptLineId: string; qtyPerLabel?: string }
@@ -1073,6 +1095,8 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
     const hit = replay(request)
     if (hit) return hit
     const body = (await request.json()) as { receiptLineId: string; quantity: string }
@@ -1108,6 +1132,8 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
     const hit = replay(request)
     if (hit) return hit
     const job = getById(db.printJobs, String(params.id))
