@@ -21,8 +21,7 @@ public sealed class ApiTestFixture : IAsyncLifetime
         TestcontainersSettings.ResourceReaperEnabled = false;
     }
 
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
-        .WithImage("postgres:16-alpine")
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine")
         .WithDatabase("awms_api_test")
         .WithUsername("awms")
         .WithPassword("awms_test_pw")
