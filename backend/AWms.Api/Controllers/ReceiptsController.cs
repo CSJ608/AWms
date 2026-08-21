@@ -25,6 +25,7 @@ public class ReceiptsController : ControllerBase
 
     [HttpPost]
     [RequirePermission("action.receiving.create")]
+    [RequireIdempotencyKey]
     public async Task<IActionResult> Submit([FromBody] SubmitReceiptRequest request, CancellationToken ct)
     {
         var result = await _receipts.SubmitAsync(request, User.UserId(), User.UserDisplayName(), ct);
@@ -47,6 +48,7 @@ public class ReceiptsController : ControllerBase
 
     [HttpPost("{id:guid}/print")]
     [RequirePermission("action.print.create")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<ApiResponse<PrintJobDto>>> Print(Guid id, CancellationToken ct)
     {
         var result = await _print.PrintReceiptAsync(id, User.UserId(), User.UserDisplayName(), ct);

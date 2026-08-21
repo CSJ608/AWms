@@ -33,6 +33,7 @@ public class InboundOrdersController : ControllerBase
 
     [HttpPost]
     [RequirePermission("action.inbound-order.create")]
+    [RequireIdempotencyKey]
     public async Task<IActionResult> Create([FromBody] CreateInboundOrderRequest request, CancellationToken ct)
     {
         var result = await _service.CreateAsync(request, User.UserDisplayName(), ct);
@@ -41,6 +42,7 @@ public class InboundOrdersController : ControllerBase
 
     [HttpPost("{id:guid}/void")]
     [RequirePermission("action.inbound-order.void")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<ApiResponse<InboundOrderItem>>> Void(Guid id, [FromBody] VoidInboundOrderRequest request, CancellationToken ct)
     {
         var result = await _service.VoidAsync(id, request.Reason, User.UserDisplayName(), ct);

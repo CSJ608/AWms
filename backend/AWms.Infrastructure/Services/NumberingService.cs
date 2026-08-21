@@ -47,7 +47,8 @@ public class NumberingService : INumberService
         _rules[$"{rule.Type}:{rule.ScopeKey}"] = rule;
     }
 
-    public Task<string> NextAsync(string type, string? scopeKey = null) => NextAsyncCore(type, scopeKey, null);
+    public Task<string> NextAsync(string type, string? scopeKey = null) =>
+        NextAsyncCore(type, scopeKey, _db.Database.CurrentTransaction);
 
     /// <summary>原子取号：与外部事务同一连接/事务（规范 2.9：与业务同一事务）。</summary>
     public async Task<string> NextAsyncCore(string type, string? scopeKey, IDbContextTransaction? externalTx)
@@ -105,18 +106,21 @@ public class NumberingService : INumberService
             throw new ArgumentException("count 必须为正数", nameof(count));
 
         var results = new List<string>(count);
-        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, CancellationToken.None);
+        await using var scope = await BusinessTransaction.BeginAsync(
+            _db,
+            IsolationLevel.RepeatableRead,
+            CancellationToken.None);
         try
         {
             for (var i = 0; i < count; i++)
             {
-                results.Add(await NextAsyncCore(type, scopeKey, tx));
+                results.Add(await NextAsyncCore(type, scopeKey, scope.Transaction));
             }
-            await tx.CommitAsync();
+            await scope.CommitAsync(CancellationToken.None);
         }
         catch
         {
-            await tx.RollbackAsync();
+            await scope.RollbackAsync(CancellationToken.None);
             throw;
         }
         return results;

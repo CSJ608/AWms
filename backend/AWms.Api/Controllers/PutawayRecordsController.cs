@@ -19,6 +19,7 @@ public class PutawayRecordsController : ControllerBase
 
     [HttpPost]
     [RequirePermission("action.putaway.create")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<ApiResponse<ReceiptItem>>> Create([FromBody] CreatePutawayRecordRequest request, CancellationToken ct)
     {
         var result = await _service.CreatePutawayRecordAsync(request, User.UserId(), User.UserDisplayName(), ct);

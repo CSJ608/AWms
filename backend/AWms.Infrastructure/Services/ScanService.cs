@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using AWms.Domain.Dtos.Inbound;
 using AWms.Domain.Dtos.Scan;
 using AWms.Domain.Entities;
@@ -26,7 +27,7 @@ public class ScanService
             throw new DomainException("VALIDATION_ERROR", "content 必填", 400);
 
         if (!request.Content.StartsWith("AWMS1:", StringComparison.Ordinal))
-            return Unknown();
+            return await ParseExternalAsync(request.Content, ct);
 
         using var doc = ParseAwmsJson(request.Content);
         var root = doc.RootElement;
@@ -177,6 +178,216 @@ public class ScanService
             null,
             Array.Empty<ScanWarning>());
     }
+
+    private async Task<ScanResult> ParseExternalAsync(string rawContent, CancellationToken ct)
+    {
+        var content = rawContent.Trim();
+        if (TryParseGs1(content, out var gs1))
+        {
+            var material = await FindExternalMaterialAsync(gs1.MaterialCodes, ct);
+            return ExternalResult(
+                content,
+                "GS1",
+                material,
+                gs1.Parsed,
+                gs1.BatchProps,
+                gs1.Quantity);
+        }
+
+        if (IsValidEan13(content))
+        {
+            var material = await FindExternalMaterialAsync(new[] { content }, ct);
+            return ExternalResult(
+                content,
+                "EAN13",
+                material,
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["gtin"] = content },
+                null,
+                null);
+        }
+
+        var code128Content = content.StartsWith("]C0", StringComparison.Ordinal) ||
+                             content.StartsWith("]C1", StringComparison.Ordinal)
+            ? content[3..]
+            : content;
+        var code128Material = await FindExternalMaterialAsync(new[] { code128Content }, ct);
+        if (code128Material != null || content.StartsWith("]C0", StringComparison.Ordinal))
+        {
+            return ExternalResult(
+                content,
+                "CODE128",
+                code128Material,
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["code"] = code128Content },
+                null,
+                null);
+        }
+
+        return Unknown();
+    }
+
+    private static ScanResult ExternalResult(
+        string code,
+        string format,
+        Material? material,
+        IReadOnlyDictionary<string, string> parsed,
+        ScanBatchPropsItem? batchProps,
+        string? quantity) =>
+        new(
+            "EXTERNAL_BARCODE",
+            null,
+            material == null ? null : MapMaterial(material),
+            null,
+            null,
+            batchProps,
+            quantity,
+            null,
+            null,
+            new ScanExternalItem(code, format, parsed),
+            Array.Empty<ScanWarning>());
+
+    private async Task<Material?> FindExternalMaterialAsync(IEnumerable<string> codes, CancellationToken ct)
+    {
+        var candidates = codes.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal).ToList();
+        if (candidates.Count == 0)
+            return null;
+        return await _db.Materials.AsNoTracking().FirstOrDefaultAsync(x => candidates.Contains(x.Code), ct);
+    }
+
+    private static bool IsValidEan13(string value)
+    {
+        if (value.Length != 13 || value.Any(x => !char.IsAsciiDigit(x)))
+            return false;
+        var sum = 0;
+        for (var i = 0; i < 12; i++)
+        {
+            var digit = value[i] - '0';
+            sum += i % 2 == 0 ? digit : digit * 3;
+        }
+        var checkDigit = (10 - sum % 10) % 10;
+        return checkDigit == value[12] - '0';
+    }
+
+    private static bool TryParseGs1(string content, out Gs1ParseResult result)
+    {
+        var normalized = content.StartsWith("]C1", StringComparison.Ordinal) ? content[3..] : content;
+        var values = normalized.Contains('(')
+            ? ParseParenthesizedGs1(normalized)
+            : ParseElementStringGs1(normalized);
+        if (!values.ContainsKey("01") && values.Keys.All(x => x is not ("10" or "11" or "15" or "30")))
+        {
+            result = default!;
+            return false;
+        }
+
+        var parsed = new Dictionary<string, string>(StringComparer.Ordinal);
+        var materialCodes = new List<string>();
+        if (values.TryGetValue("01", out var gtin))
+        {
+            if (gtin.Length != 14 || gtin.Any(x => !char.IsAsciiDigit(x)))
+            {
+                result = default!;
+                return false;
+            }
+            parsed["gtin"] = gtin;
+            materialCodes.Add(gtin);
+            if (gtin[0] == '0')
+                materialCodes.Add(gtin[1..]);
+        }
+
+        values.TryGetValue("10", out var lot);
+        if (!string.IsNullOrWhiteSpace(lot))
+            parsed["batchNo"] = lot;
+        var productionDate = values.TryGetValue("11", out var production) ? ParseGs1Date(production) : null;
+        var expiryDate = values.TryGetValue("15", out var expiry) ? ParseGs1Date(expiry) : null;
+        if (productionDate != null)
+            parsed["productionDate"] = productionDate;
+        if (expiryDate != null)
+            parsed["expiryDate"] = expiryDate;
+
+        string? quantity = null;
+        if (values.TryGetValue("30", out var count) &&
+            decimal.TryParse(count, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedQuantity) &&
+            parsedQuantity > 0)
+        {
+            quantity = InboundOrderService.FormatQty(parsedQuantity);
+            parsed["quantity"] = quantity;
+        }
+
+        result = new Gs1ParseResult(
+            parsed,
+            materialCodes,
+            new ScanBatchPropsItem(lot, productionDate, expiryDate, null, null),
+            quantity);
+        return true;
+    }
+
+    private static Dictionary<string, string> ParseParenthesizedGs1(string content)
+    {
+        var matches = Regex.Matches(content, @"\((01|10|11|15|30)\)");
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var i = 0; i < matches.Count; i++)
+        {
+            var match = matches[i];
+            var start = match.Index + match.Length;
+            var end = i + 1 < matches.Count ? matches[i + 1].Index : content.Length;
+            values[match.Groups[1].Value] = content[start..end].Trim((char)29);
+        }
+        return values;
+    }
+
+    private static Dictionary<string, string> ParseElementStringGs1(string content)
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        var index = 0;
+        while (index + 2 <= content.Length)
+        {
+            var ai = content.Substring(index, 2);
+            index += 2;
+            var fixedLength = ai switch
+            {
+                "01" => 14,
+                "11" or "15" => 6,
+                _ => 0
+            };
+            if (fixedLength > 0)
+            {
+                if (index + fixedLength > content.Length)
+                    return new Dictionary<string, string>();
+                values[ai] = content.Substring(index, fixedLength);
+                index += fixedLength;
+                continue;
+            }
+            if (ai is not ("10" or "30"))
+                return new Dictionary<string, string>();
+
+            var separator = content.IndexOf((char)29, index);
+            if (separator < 0)
+                separator = content.Length;
+            values[ai] = content[index..separator];
+            index = separator < content.Length ? separator + 1 : separator;
+        }
+        return values;
+    }
+
+    private static string? ParseGs1Date(string value)
+    {
+        if (value.Length != 6 || value.Any(x => !char.IsAsciiDigit(x)))
+            return null;
+        if (!DateOnly.TryParseExact(
+                $"20{value}",
+                "yyyyMMdd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var date))
+            return null;
+        return date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    }
+
+    private sealed record Gs1ParseResult(
+        IReadOnlyDictionary<string, string> Parsed,
+        IReadOnlyList<string> MaterialCodes,
+        ScanBatchPropsItem BatchProps,
+        string? Quantity);
 
     private async Task<ScanDocumentItem> MapDocumentAsync(InboundOrder order, CancellationToken ct, Guid? onlyLineId = null)
     {

@@ -14,7 +14,7 @@ public record ScanResult(
     string? Quantity,
     ScanDocumentItem? Document,
     ScanSourceItem? Source,
-    object? External,
+    ScanExternalItem? External,
     IReadOnlyList<ScanWarning> Warnings,
     string? Message = null);
 
@@ -64,5 +64,10 @@ public record ScanDocumentLineItem(
     IReadOnlyList<AWms.Domain.Dtos.Inbound.UniqueCodeItem> UniqueCodes);
 
 public record ScanSourceItem(string SourceType, string SourceCode, string SourceName);
+
+public record ScanExternalItem(
+    string Code,
+    string Format,
+    IReadOnlyDictionary<string, string> Parsed);
 
 public record ScanWarning(string Code, string Message, bool Blocking);

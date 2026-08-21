@@ -19,6 +19,7 @@ public class ReceiptLinesController : ControllerBase
 
     [HttpPost("{lineId:guid}/quality-check")]
     [RequirePermission("action.quality.check")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<ApiResponse<ReceiptItem>>> QualityCheck(Guid lineId, [FromBody] QualityCheckRequest request, CancellationToken ct)
     {
         var result = await _service.SubmitQualityCheckAsync(lineId, request, User.UserId(), User.UserDisplayName(), ct);

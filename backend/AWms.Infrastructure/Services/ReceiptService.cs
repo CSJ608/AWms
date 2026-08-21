@@ -5,8 +5,11 @@ using AWms.Domain.Dtos.Common;
 using AWms.Domain.Dtos.Receipts;
 using AWms.Domain.Entities;
 using AWms.Domain.Enums;
+using AWms.Domain.Interfaces;
 using AWms.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 
 namespace AWms.Infrastructure.Services;
 
@@ -15,12 +18,28 @@ public class ReceiptService
     private readonly AWmsDbContext _db;
     private readonly NumberingService _numbering;
     private readonly AttachmentService _attachments;
+    private readonly IQueryService _queryService;
 
-    public ReceiptService(AWmsDbContext db, NumberingService numbering, AttachmentService attachments)
+    private static readonly HashSet<string> ReceiptFilterFields = new(StringComparer.Ordinal)
+    {
+        "receiptNo", "warehouseId", "inboundOrderId", "sourceDocType", "sourceDocNo", "status", "operatorId", "occurredAt"
+    };
+
+    private static readonly HashSet<string> ReceiptSortFields = new(StringComparer.Ordinal)
+    {
+        "receiptNo", "status", "occurredAt"
+    };
+
+    public ReceiptService(
+        AWmsDbContext db,
+        NumberingService numbering,
+        AttachmentService attachments,
+        IQueryService queryService)
     {
         _db = db;
         _numbering = numbering;
         _attachments = attachments;
+        _queryService = queryService;
     }
 
     public async Task<ReceiptItem> SubmitAsync(SubmitReceiptRequest request, Guid operatorId, string operatorName, CancellationToken ct = default)
@@ -30,7 +49,7 @@ public class ReceiptService
         if (request.Photos is { Count: > 3 })
             throw new DomainException("VALIDATION_ERROR", "收货照片最多 3 张", 400);
 
-        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+        await using var tx = await BusinessTransaction.BeginAsync(_db, IsolationLevel.ReadCommitted, ct);
         try
         {
             var warehouse = await RequireWarehouseAsync(request.WarehouseId, ct);
@@ -44,9 +63,9 @@ public class ReceiptService
 
             if (request.InboundOrderId.HasValue)
             {
+                await LockOrderAsync(request.InboundOrderId.Value, ct);
                 order = await LoadOrderForWriteAsync(request.InboundOrderId.Value, ct)
                     ?? throw new DomainException("ORDER_NOT_FOUND", "入库单不存在", 404);
-                await LockOrderLinesAsync(order.Id, ct);
 
                 if (order.Status == InboundOrderStatus.VOIDED)
                     throw new DomainException("ORDER_VOIDED", "入库单已作废", 409);
@@ -71,7 +90,7 @@ public class ReceiptService
 
             var receipt = new Receipt
             {
-                ReceiptNo = await _numbering.NextAsyncCore("RECEIPT", "GLOBAL", tx),
+                ReceiptNo = await _numbering.NextAsyncCore("RECEIPT", "GLOBAL", tx.Transaction),
                 WarehouseId = warehouse.Id,
                 StagingLocationId = staging.Id,
                 InboundOrderId = order?.Id,
@@ -86,17 +105,28 @@ public class ReceiptService
             };
             _db.Receipts.Add(receipt);
 
-            var prepared = new List<ReceiptLine>();
-            var lineNo = 1;
+            var resolvedOrderLines = new List<InboundOrderLine?>(request.Lines.Count);
+            var referencedOrderLineIds = new HashSet<Guid>();
             foreach (var lineRequest in request.Lines)
             {
+                var resolved = ResolveOrderLine(order, lineRequest, lineRequest.MaterialId);
+                if (resolved != null && !referencedOrderLineIds.Add(resolved.Id))
+                    throw new DomainException("ORDER_LINE_MISMATCH", "同一收货请求不得重复引用同一入库单行", 400);
+                resolvedOrderLines.Add(resolved);
+            }
+
+            var prepared = new List<ReceiptLine>();
+            var lineNo = 1;
+            for (var requestIndex = 0; requestIndex < request.Lines.Count; requestIndex++)
+            {
+                var lineRequest = request.Lines[requestIndex];
                 var material = await RequireMaterialAsync(lineRequest.MaterialId, ct);
                 var quantity = InboundOrderService.ParsePositiveDecimal(lineRequest.Quantity, "quantity");
-                var orderLine = ResolveOrderLine(order, lineRequest, material.Id);
-                ValidateOrderLineQuantity(order, orderLine, quantity);
+                var orderLine = resolvedOrderLines[requestIndex];
+                await ValidateOrderLineQuantityAsync(order, orderLine, quantity, ct);
                 await ValidateUniqueCodesAsync(order, orderLine, material, lineRequest.UniqueCodes, quantity, ct);
 
-                var batch = await ResolveBatchAsync(sourceDocType, material, lineRequest.BatchId, lineRequest.BatchProps, headerSourceType, headerSourceCode, tx, ct);
+                var batch = await ResolveBatchAsync(sourceDocType, material, lineRequest.BatchId, lineRequest.BatchProps, headerSourceType, headerSourceCode, tx.Transaction, ct);
 
                 prepared.Add(new ReceiptLine
                 {
@@ -134,7 +164,7 @@ public class ReceiptService
                     receipt.SourceDocType.ToString(),
                     receipt.ReceiptNo,
                     operatorId,
-                    tx,
+                    tx.Transaction,
                     ct);
             }
 
@@ -151,8 +181,7 @@ public class ReceiptService
         }
         catch
         {
-            await tx.RollbackAsync(ct);
-            _db.ChangeTracker.Clear();
+            await tx.RollbackAsync(CancellationToken.None);
             throw;
         }
     }
@@ -174,11 +203,19 @@ public class ReceiptService
         if (request.DateTo.HasValue)
             query = query.Where(x => x.OccurredAt < request.DateTo.Value);
 
-        var total = await query.CountAsync(ct);
-        var receipts = await query.OrderByDescending(x => x.OccurredAt).ThenByDescending(x => x.Id)
-            .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
-        var items = await MapReceiptsAsync(receipts, ct);
-        return new PagedResult<ReceiptItem>(items, total, page, pageSize);
+        var filterRequest = new FilterRequest(
+            null, null, null, null, null, null, null, null,
+            request.Sort?.ToList(), request.Filter, page, pageSize);
+        var (_, result) = await _queryService.ApplyAsync(
+            query,
+            filterRequest,
+            ReceiptFilterFields,
+            ReceiptSortFields,
+            "occurredAt",
+            "desc",
+            isTimeBasedList: true);
+        var items = await MapReceiptsAsync(result.Items, ct);
+        return new PagedResult<ReceiptItem>(items, result.Total, result.Page, result.PageSize);
     }
 
     public async Task<ReceiptItem> GetAsync(Guid id, CancellationToken ct = default)
@@ -223,7 +260,7 @@ public class ReceiptService
 
     public async Task<ReceiptItem> SubmitQualityCheckAsync(Guid receiptLineId, QualityCheckRequest request, Guid operatorId, string operatorName, CancellationToken ct = default)
     {
-        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+        await using var tx = await BusinessTransaction.BeginAsync(_db, IsolationLevel.ReadCommitted, ct);
         try
         {
             await LockReceiptLineAsync(receiptLineId, ct);
@@ -272,7 +309,7 @@ public class ReceiptService
                     line.Receipt.ReceiptNo,
                     operatorId,
                     null,
-                    tx,
+                    tx.Transaction,
                     ct);
             }
             else
@@ -295,8 +332,7 @@ public class ReceiptService
         }
         catch
         {
-            await tx.RollbackAsync(ct);
-            _db.ChangeTracker.Clear();
+            await tx.RollbackAsync(CancellationToken.None);
             throw;
         }
     }
@@ -339,51 +375,71 @@ public class ReceiptService
 
     public async Task<ReceiptItem> ResolveQualityCheckAsync(Guid checkId, ResolveQualityCheckRequest request, Guid operatorId, string operatorName, CancellationToken ct = default)
     {
-        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+        await using var tx = await BusinessTransaction.BeginAsync(_db, IsolationLevel.ReadCommitted, ct);
         try
         {
-            var check = await _db.QualityChecks
-                .Include(x => x.ReceiptLine).ThenInclude(x => x.Receipt)
-                .FirstOrDefaultAsync(x => x.Id == checkId, ct)
-                ?? throw new DomainException("QUALITY_CHECK_NOT_FOUND", "质检记录不存在", 404);
-            await LockReceiptLineAsync(check.ReceiptLineId, ct);
-            if (check.Result != QualityCheckResult.EXCEPTION || check.ResolutionAction != null)
-                throw new DomainException("QUALITY_CHECK_ALREADY_RESOLVED", "质检异常已处理", 409);
-
             var action = InboundOrderService.ParseEnum<QualityResolutionAction>(request.Action, "action");
             if (action == QualityResolutionAction.REJECT && string.IsNullOrWhiteSpace(request.Note))
                 throw new DomainException("VALIDATION_ERROR", "REJECT 备注必填", 400);
 
-            check.ResolutionAction = action;
-            check.ResolutionNote = request.Note;
-            check.ResolvedBy = operatorId;
-            check.ResolvedByName = operatorName;
-            check.ResolvedAt = DateTime.UtcNow;
+            var resolvedAt = DateTime.UtcNow;
+            var updated = await _db.QualityChecks
+                .Where(x => x.Id == checkId &&
+                            x.Result == QualityCheckResult.EXCEPTION &&
+                            x.ResolutionAction == null)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.ResolutionAction, action)
+                    .SetProperty(x => x.ResolutionNote, request.Note)
+                    .SetProperty(x => x.ResolvedBy, operatorId)
+                    .SetProperty(x => x.ResolvedByName, operatorName)
+                    .SetProperty(x => x.ResolvedAt, resolvedAt), ct);
+            if (updated == 0)
+            {
+                var exists = await _db.QualityChecks.AsNoTracking().AnyAsync(x => x.Id == checkId, ct);
+                if (!exists)
+                    throw new DomainException("QUALITY_CHECK_NOT_FOUND", "质检记录不存在", 404);
+                throw new DomainException("QUALITY_CHECK_ALREADY_RESOLVED", "质检异常已处理", 409);
+            }
+
+            var check = await _db.QualityChecks
+                .Include(x => x.ReceiptLine).ThenInclude(x => x.Receipt)
+                .AsNoTracking()
+                .FirstAsync(x => x.Id == checkId, ct);
 
             if (action == QualityResolutionAction.PASS)
             {
                 var line = await LoadReceiptLineForWriteAsync(check.ReceiptLineId, ct)
-                    ?? throw new DomainException("RECEIPT_LINE_NOT_FOUND", "收货行不存在", 404);
-                if (line.Status != ReceiptLineStatus.EXCEPTION)
+                    ?? throw new DomainException("QC_STATUS_INVALID", "收货行不存在", 409);
+                var lineUpdated = await _db.ReceiptLines
+                    .Where(x => x.Id == line.Id && x.Status == ReceiptLineStatus.EXCEPTION)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, ReceiptLineStatus.CHECKED), ct);
+                if (lineUpdated == 0)
                     throw new DomainException("QC_STATUS_INVALID", "当前行不可放行", 409);
                 line.Status = ReceiptLineStatus.CHECKED;
-                await MoveInventoryAsync(
-                    line.Receipt.WarehouseId,
-                    line.MaterialId,
-                    line.BatchId,
-                    line.Receipt.StagingLocationId,
-                    line.Receipt.StagingLocationId,
-                    StockSubjectStatus.PENDING_INSPECTION,
-                    StockSubjectStatus.AVAILABLE,
-                    line.ActualQty,
-                    TxnGroupType.QUALITY_CHECK,
-                    LedgerReason.QUALITY_CHECK,
-                    line.Receipt.SourceDocType.ToString(),
-                    line.Receipt.ReceiptNo,
-                    operatorId,
-                    null,
-                    tx,
-                    ct);
+                try
+                {
+                    await MoveInventoryAsync(
+                        line.Receipt.WarehouseId,
+                        line.MaterialId,
+                        line.BatchId,
+                        line.Receipt.StagingLocationId,
+                        line.Receipt.StagingLocationId,
+                        StockSubjectStatus.PENDING_INSPECTION,
+                        StockSubjectStatus.AVAILABLE,
+                        line.ActualQty,
+                        TxnGroupType.QUALITY_CHECK,
+                        LedgerReason.QUALITY_CHECK,
+                        line.Receipt.SourceDocType.ToString(),
+                        line.Receipt.ReceiptNo,
+                        operatorId,
+                        null,
+                        tx.Transaction,
+                        ct);
+                }
+                catch (DomainException ex) when (ex.Code is "INSUFFICIENT_STOCK" or "VERSION_CONFLICT")
+                {
+                    throw new DomainException("QC_STATUS_INVALID", "待检库存状态不允许放行", 409);
+                }
             }
 
             await AdvanceReceiptStatusAsync(check.ReceiptLine.ReceiptId, ct);
@@ -393,8 +449,7 @@ public class ReceiptService
         }
         catch
         {
-            await tx.RollbackAsync(ct);
-            _db.ChangeTracker.Clear();
+            await tx.RollbackAsync(CancellationToken.None);
             throw;
         }
     }
@@ -477,7 +532,7 @@ public class ReceiptService
 
     public async Task<ReceiptItem> CreatePutawayRecordAsync(CreatePutawayRecordRequest request, Guid operatorId, string operatorName, CancellationToken ct = default)
     {
-        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+        await using var tx = await BusinessTransaction.BeginAsync(_db, IsolationLevel.ReadCommitted, ct);
         try
         {
             await LockReceiptLineAsync(request.ReceiptLineId, ct);
@@ -512,7 +567,7 @@ public class ReceiptService
                 line.Receipt.ReceiptNo,
                 operatorId,
                 request.ExpectedInventoryVersion,
-                tx,
+                tx.Transaction,
                 ct);
 
             var subject = await GetOrCreateSubjectAsync(line.Receipt.WarehouseId, line.MaterialId, line.BatchId, StockSubjectStatus.AVAILABLE, ct);
@@ -538,8 +593,7 @@ public class ReceiptService
         }
         catch
         {
-            await tx.RollbackAsync(ct);
-            _db.ChangeTracker.Clear();
+            await tx.RollbackAsync(CancellationToken.None);
             throw;
         }
     }
@@ -701,8 +755,8 @@ public class ReceiptService
             .Include(x => x.Batch)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
 
-    private async Task LockOrderLinesAsync(Guid orderId, CancellationToken ct) =>
-        await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"InboundOrderLines\" WHERE \"OrderId\" = {orderId} FOR UPDATE", ct);
+    private async Task LockOrderAsync(Guid orderId, CancellationToken ct) =>
+        await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"InboundOrders\" WHERE \"Id\" = {orderId} FOR UPDATE", ct);
 
     private async Task LockReceiptLineAsync(Guid lineId, CancellationToken ct) =>
         await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"ReceiptLines\" WHERE \"Id\" = {lineId} FOR UPDATE", ct);
@@ -751,21 +805,28 @@ public class ReceiptService
         return matches[0];
     }
 
-    private void ValidateOrderLineQuantity(InboundOrder? order, InboundOrderLine? orderLine, decimal quantity)
+    private async Task ValidateOrderLineQuantityAsync(
+        InboundOrder? order,
+        InboundOrderLine? orderLine,
+        decimal quantity,
+        CancellationToken ct)
     {
         if (order == null || orderLine == null)
             return;
 
-        var alreadyReceived = _db.ReceiptLines.AsNoTracking()
+        var alreadyReceived = await _db.ReceiptLines.AsNoTracking()
             .Where(x => x.OrderLineId == orderLine.Id)
-            .Sum(x => x.ActualQty);
+            .SumAsync(x => x.ActualQty, ct);
         if (order.Type == InboundOrderType.PO && (quantity != orderLine.ExpectedQty || alreadyReceived > 0))
             throw new DomainException("QTY_MISMATCH_STRICT", "PO 行必须一次收齐且数量等于应到", 400);
     }
 
     private async Task ValidateUniqueCodesAsync(InboundOrder? order, InboundOrderLine? orderLine, Material material, IReadOnlyList<string>? uniqueCodes, decimal quantity, CancellationToken ct)
     {
-        var codes = uniqueCodes?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal).ToList() ?? new List<string>();
+        var suppliedCodes = uniqueCodes?.Where(x => !string.IsNullOrWhiteSpace(x)).ToList() ?? new List<string>();
+        var codes = suppliedCodes.Distinct(StringComparer.Ordinal).ToList();
+        if (codes.Count != suppliedCodes.Count)
+            throw new DomainException("UNIQUE_CODE_ALREADY_RECEIVED", "同一请求不得重复提交唯一码", 409);
         if (material.LabelType != LabelType.UNIQUE)
         {
             if (codes.Count > 0)
@@ -890,33 +951,50 @@ public class ReceiptService
 
     private async Task<StockSubject> GetOrCreateSubjectAsync(Guid warehouseId, Guid materialId, Guid batchId, StockSubjectStatus status, CancellationToken ct)
     {
-        var subject = await _db.StockSubjects.FirstOrDefaultAsync(x => x.WarehouseId == warehouseId && x.MaterialId == materialId && x.BatchId == batchId && x.Status == status, ct);
+        var subject = await _db.StockSubjects.AsNoTracking().FirstOrDefaultAsync(
+            x => x.WarehouseId == warehouseId && x.MaterialId == materialId && x.BatchId == batchId && x.Status == status,
+            ct);
         if (subject != null)
             return subject;
 
         var material = await _db.Materials.AsNoTracking().FirstAsync(x => x.Id == materialId, ct);
-        subject = new StockSubject
+        var id = Guid.CreateVersion7();
+        var transaction = _db.Database.CurrentTransaction
+            ?? throw new InvalidOperationException("库存主体创建必须在事务内执行");
+        var connection = _db.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction.GetDbTransaction();
+        command.CommandText = """
+            INSERT INTO "StockSubjects" ("Id", "WarehouseId", "MaterialId", "BatchId", "Status", "Uom")
+            VALUES (@id, @warehouseId, @materialId, @batchId, @status, @uom)
+            ON CONFLICT ("WarehouseId", "MaterialId", "BatchId", "Status") DO NOTHING
+            RETURNING "Id"
+            """;
+        command.Parameters.Add(new NpgsqlParameter("id", id));
+        command.Parameters.Add(new NpgsqlParameter("warehouseId", warehouseId));
+        command.Parameters.Add(new NpgsqlParameter("materialId", materialId));
+        command.Parameters.Add(new NpgsqlParameter("batchId", batchId));
+        command.Parameters.Add(new NpgsqlParameter("status", status.ToString()));
+        command.Parameters.Add(new NpgsqlParameter("uom", material.DefaultUom));
+        var inserted = await command.ExecuteScalarAsync(ct);
+        var subjectId = inserted is Guid insertedId
+            ? insertedId
+            : await _db.StockSubjects.AsNoTracking()
+                .Where(x => x.WarehouseId == warehouseId &&
+                            x.MaterialId == materialId &&
+                            x.BatchId == batchId &&
+                            x.Status == status)
+                .Select(x => x.Id)
+                .SingleAsync(ct);
+        return new StockSubject
         {
+            Id = subjectId,
             WarehouseId = warehouseId,
             MaterialId = materialId,
             BatchId = batchId,
             Status = status,
             Uom = material.DefaultUom
         };
-        _db.StockSubjects.Add(subject);
-        await _db.SaveChangesAsync(ct);
-        return subject;
-    }
-
-    private async Task<PhysicalInventory> GetOrCreateInventoryAsync(Guid locationId, Guid subjectId, CancellationToken ct)
-    {
-        var inventory = await _db.PhysicalInventories.FirstOrDefaultAsync(x => x.LocationId == locationId && x.SubjectId == subjectId, ct);
-        if (inventory != null)
-            return inventory;
-        inventory = new PhysicalInventory { LocationId = locationId, SubjectId = subjectId, Quantity = 0, Version = 0 };
-        _db.PhysicalInventories.Add(inventory);
-        await _db.SaveChangesAsync(ct);
-        return inventory;
     }
 
     private async Task AddInventoryAsync(
@@ -931,14 +1009,11 @@ public class ReceiptService
         string sourceDocType,
         string sourceDocNo,
         Guid operatorId,
-        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction tx,
+        IDbContextTransaction tx,
         CancellationToken ct)
     {
         var subject = await GetOrCreateSubjectAsync(warehouseId, materialId, batchId, status, ct);
-        var inventory = await GetOrCreateInventoryAsync(locationId, subject.Id, ct);
-        var before = inventory.Quantity;
-        inventory.Quantity += quantity;
-        inventory.Version++;
+        var inventory = await IncrementInventoryAsync(locationId, subject.Id, quantity, ct);
         var group = await CreateTxnGroupAsync(groupType, tx, ct);
         _db.StockLedgers.Add(new StockLedger
         {
@@ -947,8 +1022,8 @@ public class ReceiptService
             SubjectId = subject.Id,
             LocationId = locationId,
             Quantity = quantity,
-            BalanceBefore = before,
-            BalanceAfter = inventory.Quantity,
+            BalanceBefore = inventory.BalanceBefore,
+            BalanceAfter = inventory.BalanceAfter,
             Reason = reason,
             SourceDocType = sourceDocType,
             SourceDocNo = sourceDocNo,
@@ -973,24 +1048,20 @@ public class ReceiptService
         string sourceDocNo,
         Guid operatorId,
         int? expectedFromVersion,
-        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction tx,
+        IDbContextTransaction tx,
         CancellationToken ct)
     {
         var fromSubject = await GetOrCreateSubjectAsync(warehouseId, materialId, batchId, fromStatus, ct);
-        var fromInventory = await _db.PhysicalInventories.FirstOrDefaultAsync(x => x.LocationId == fromLocationId && x.SubjectId == fromSubject.Id, ct)
-            ?? throw new DomainException("INSUFFICIENT_STOCK", "库存不足", 409);
-        if (expectedFromVersion.HasValue && fromInventory.Version != expectedFromVersion.Value)
-            throw new DomainException("VERSION_CONFLICT", "库存版本已变化", 409);
-        if (fromInventory.Quantity < quantity)
-            throw new DomainException("INSUFFICIENT_STOCK", "库存不足", 409);
-
+        var fromInventory = await DecrementInventoryAsync(
+            fromLocationId,
+            fromSubject.Id,
+            quantity,
+            expectedFromVersion,
+            ct);
         var toSubject = await GetOrCreateSubjectAsync(warehouseId, materialId, batchId, toStatus, ct);
-        var toInventory = await GetOrCreateInventoryAsync(toLocationId, toSubject.Id, ct);
+        var toInventory = await IncrementInventoryAsync(toLocationId, toSubject.Id, quantity, ct);
         var group = await CreateTxnGroupAsync(groupType, tx, ct);
 
-        var fromBefore = fromInventory.Quantity;
-        fromInventory.Quantity -= quantity;
-        fromInventory.Version++;
         _db.StockLedgers.Add(new StockLedger
         {
             TxnGroupId = group.Id,
@@ -998,8 +1069,8 @@ public class ReceiptService
             SubjectId = fromSubject.Id,
             LocationId = fromLocationId,
             Quantity = -quantity,
-            BalanceBefore = fromBefore,
-            BalanceAfter = fromInventory.Quantity,
+            BalanceBefore = fromInventory.BalanceBefore,
+            BalanceAfter = fromInventory.BalanceAfter,
             Reason = reason,
             SourceDocType = sourceDocType,
             SourceDocNo = sourceDocNo,
@@ -1007,9 +1078,6 @@ public class ReceiptService
             OccurredAt = DateTime.UtcNow
         });
 
-        var toBefore = toInventory.Quantity;
-        toInventory.Quantity += quantity;
-        toInventory.Version++;
         _db.StockLedgers.Add(new StockLedger
         {
             TxnGroupId = group.Id,
@@ -1017,8 +1085,8 @@ public class ReceiptService
             SubjectId = toSubject.Id,
             LocationId = toLocationId,
             Quantity = quantity,
-            BalanceBefore = toBefore,
-            BalanceAfter = toInventory.Quantity,
+            BalanceBefore = toInventory.BalanceBefore,
+            BalanceAfter = toInventory.BalanceAfter,
             Reason = reason,
             SourceDocType = sourceDocType,
             SourceDocNo = sourceDocNo,
@@ -1028,7 +1096,82 @@ public class ReceiptService
         await _db.SaveChangesAsync(ct);
     }
 
-    private async Task<TxnGroup> CreateTxnGroupAsync(TxnGroupType type, Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction tx, CancellationToken ct)
+    private async Task<InventoryMutation> IncrementInventoryAsync(
+        Guid locationId,
+        Guid subjectId,
+        decimal quantity,
+        CancellationToken ct)
+    {
+        var transaction = _db.Database.CurrentTransaction
+            ?? throw new InvalidOperationException("库存更新必须在事务内执行");
+        var connection = _db.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction.GetDbTransaction();
+        command.CommandText = """
+            INSERT INTO "PhysicalInventories" ("Id", "LocationId", "SubjectId", "Quantity", "Version")
+            VALUES (@id, @locationId, @subjectId, @quantity, 1)
+            ON CONFLICT ("LocationId", "SubjectId") DO UPDATE
+            SET "Quantity" = "PhysicalInventories"."Quantity" + EXCLUDED."Quantity",
+                "Version" = "PhysicalInventories"."Version" + 1
+            RETURNING "Quantity", "Version"
+            """;
+        command.Parameters.Add(new NpgsqlParameter("id", Guid.CreateVersion7()));
+        command.Parameters.Add(new NpgsqlParameter("locationId", locationId));
+        command.Parameters.Add(new NpgsqlParameter("subjectId", subjectId));
+        command.Parameters.Add(new NpgsqlParameter("quantity", quantity));
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        await reader.ReadAsync(ct);
+        var balanceAfter = reader.GetDecimal(0);
+        var versionAfter = reader.GetInt32(1);
+        return new InventoryMutation(balanceAfter - quantity, balanceAfter, versionAfter);
+    }
+
+    private async Task<InventoryMutation> DecrementInventoryAsync(
+        Guid locationId,
+        Guid subjectId,
+        decimal quantity,
+        int? expectedVersion,
+        CancellationToken ct)
+    {
+        var transaction = _db.Database.CurrentTransaction
+            ?? throw new InvalidOperationException("库存更新必须在事务内执行");
+        var connection = _db.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction.GetDbTransaction();
+        command.CommandText = """
+            UPDATE "PhysicalInventories"
+            SET "Quantity" = "Quantity" - @quantity,
+                "Version" = "Version" + 1
+            WHERE "LocationId" = @locationId
+              AND "SubjectId" = @subjectId
+              AND "Quantity" >= @quantity
+            """ + (expectedVersion.HasValue ? " AND \"Version\" = @expectedVersion" : string.Empty) +
+            " RETURNING \"Quantity\", \"Version\"";
+        command.Parameters.Add(new NpgsqlParameter("locationId", locationId));
+        command.Parameters.Add(new NpgsqlParameter("subjectId", subjectId));
+        command.Parameters.Add(new NpgsqlParameter("quantity", quantity));
+        if (expectedVersion.HasValue)
+            command.Parameters.Add(new NpgsqlParameter("expectedVersion", expectedVersion.Value));
+
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (await reader.ReadAsync(ct))
+        {
+            var balanceAfter = reader.GetDecimal(0);
+            var versionAfter = reader.GetInt32(1);
+            return new InventoryMutation(balanceAfter + quantity, balanceAfter, versionAfter);
+        }
+        await reader.DisposeAsync();
+
+        var current = await _db.PhysicalInventories.AsNoTracking()
+            .Where(x => x.LocationId == locationId && x.SubjectId == subjectId)
+            .Select(x => new { x.Quantity, x.Version })
+            .SingleOrDefaultAsync(ct);
+        if (expectedVersion.HasValue && current != null && current.Version != expectedVersion.Value)
+            throw new DomainException("VERSION_CONFLICT", "库存版本已变化", 409);
+        throw new DomainException("INSUFFICIENT_STOCK", "库存不足", 409);
+    }
+
+    private async Task<TxnGroup> CreateTxnGroupAsync(TxnGroupType type, IDbContextTransaction tx, CancellationToken ct)
     {
         var group = new TxnGroup
         {
@@ -1040,6 +1183,8 @@ public class ReceiptService
         await _db.SaveChangesAsync(ct);
         return group;
     }
+
+    private sealed record InventoryMutation(decimal BalanceBefore, decimal BalanceAfter, int VersionAfter);
 
     private async Task AdvanceInboundOrderStatusAsync(InboundOrder order, CancellationToken ct)
     {

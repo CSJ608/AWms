@@ -32,7 +32,7 @@ public class PrintService
             ?? throw new DomainException("ORDER_NOT_FOUND", "入库单不存在", 404);
         var content = AwmsCode(new { v = 1, t = "D", ty = order.Type.ToString(), d = order.OrderNo, wh = order.Warehouse.Code });
         var readable = $"单据：{order.OrderNo}\n类型：{order.Type}\n仓库：{order.Warehouse.Code}";
-        var job = await CreateReadyJobAsync("INBOUND_ORDER", order.Id, "INBOUND_ORDER_QR", new[] { ("D", content, readable, (decimal?)null) }, userId, userName, createPdf: true, ct);
+        var job = await CreateJobAsync("INBOUND_ORDER", order.Id, "INBOUND_ORDER_QR", new[] { ("D", content, readable, (decimal?)null) }, userId, userName, createPdf: true, ct);
         return Map(job);
     }
 
@@ -80,7 +80,7 @@ public class PrintService
         var firstBiz = request.Items.Count == 1 && request.Items[0].InboundOrderLineId.HasValue
             ? ("INBOUND_ORDER_LINE", request.Items[0].InboundOrderLineId)
             : (null, (Guid?)null);
-        var job = await CreateReadyJobAsync(firstBiz.Item1, firstBiz.Item2, "EXTERNAL_LABEL", expanded, userId, userName, createPdf: true, ct);
+        var job = await CreateJobAsync(firstBiz.Item1, firstBiz.Item2, "EXTERNAL_LABEL", expanded, userId, userName, createPdf: true, ct);
         return Map(job);
     }
 
@@ -90,7 +90,7 @@ public class PrintService
             throw new DomainException("VALIDATION_ERROR", "count 范围 1-1000", 400);
         var qtyPerCode = string.IsNullOrWhiteSpace(request.QtyPerCode) ? 1 : InboundOrderService.ParsePositiveDecimal(request.QtyPerCode, "qtyPerCode");
 
-        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var tx = await BusinessTransaction.BeginAsync(_db, IsolationLevel.Serializable, ct);
         try
         {
             var line = await _db.InboundOrderLines
@@ -109,7 +109,7 @@ public class PrintService
 
             var codes = new List<string>(request.Count);
             for (var i = 0; i < request.Count; i++)
-                codes.Add(await _numbering.NextAsyncCore("UNIQUE_CODE", "GLOBAL", tx));
+                codes.Add(await _numbering.NextAsyncCore("UNIQUE_CODE", "GLOBAL", tx.Transaction));
             var items = new List<(string LabelType, string Content, string Readable, decimal? Quantity)>();
             foreach (var code in codes)
             {
@@ -124,14 +124,13 @@ public class PrintService
                 items.Add(("U", content, $"物料：{line.Material.Code} {line.Material.Name}\n唯一码：{code}\n数量：{InboundOrderService.FormatQty(qtyPerCode)}", qtyPerCode));
             }
 
-            var job = await CreateReadyJobAsync("INBOUND_ORDER_LINE", line.Id, "UNIQUE_LABEL", items, userId, userName, createPdf: true, ct);
+            var job = await CreateJobAsync("INBOUND_ORDER_LINE", line.Id, "UNIQUE_LABEL", items, userId, userName, createPdf: true, ct);
             await tx.CommitAsync(ct);
             return Map(job);
         }
         catch
         {
-            await tx.RollbackAsync(ct);
-            _db.ChangeTracker.Clear();
+            await tx.RollbackAsync(CancellationToken.None);
             throw;
         }
     }
@@ -148,7 +147,7 @@ public class PrintService
             ? line.Material.DefaultQtyPerLabel ?? line.ActualQty
             : InboundOrderService.ParsePositiveDecimal(request.QtyPerLabel, "qtyPerLabel");
         var items = SplitBatchLabels(line.Material.Code, line.Material.Name, line.Batch.BatchNo, line.ActualQty, qtyPerLabel).ToList();
-        var job = await CreateReadyJobAsync("RECEIPT_LINE", line.Id, "BATCH_LABEL", items, userId, userName, createPdf: true, ct);
+        var job = await CreateJobAsync("RECEIPT_LINE", line.Id, "BATCH_LABEL", items, userId, userName, createPdf: true, ct);
         return Map(job);
     }
 
@@ -160,7 +159,7 @@ public class PrintService
             ?? throw new DomainException("RECEIPT_LINE_NOT_FOUND", "收货行不存在", 404);
         var content = AwmsCode(new { v = 1, t = "B", s = line.Material.Code, b = line.Batch.BatchNo, q = InboundOrderService.FormatQty(quantity) });
         var readable = $"物料：{line.Material.Code} {line.Material.Name}\n批次：{line.Batch.BatchNo}\n数量：{InboundOrderService.FormatQty(quantity)}";
-        var job = await CreateReadyJobAsync("RECEIPT_LINE", line.Id, "BATCH_LABEL", new[] { ("B", content, readable, (decimal?)quantity) }, userId, userName, createPdf: false, ct);
+        var job = await CreateJobAsync("RECEIPT_LINE", line.Id, "BATCH_LABEL", new[] { ("B", content, readable, (decimal?)quantity) }, userId, userName, createPdf: false, ct);
         return Map(job);
     }
 
@@ -176,7 +175,7 @@ public class PrintService
             .AppendLine($"状态：{receipt.Status}");
         foreach (var line in receipt.Lines.OrderBy(x => x.LineNo))
             readable.AppendLine($"{line.LineNo}. {line.Material.Code} {InboundOrderService.FormatQty(line.ActualQty)}");
-        var job = await CreateReadyJobAsync("RECEIPT", receipt.Id, "RECEIPT", new[] { ("R", receipt.ReceiptNo, readable.ToString(), (decimal?)null) }, userId, userName, createPdf: true, ct);
+        var job = await CreateJobAsync("RECEIPT", receipt.Id, "RECEIPT", new[] { ("R", receipt.ReceiptNo, readable.ToString(), (decimal?)null) }, userId, userName, createPdf: true, ct);
         return Map(job);
     }
 
@@ -210,17 +209,24 @@ public class PrintService
 
     public async Task<PrintJobDto> RetryAsync(Guid id, CancellationToken ct = default)
     {
-        var job = await _db.PrintJobs.Include(x => x.Items).FirstOrDefaultAsync(x => x.Id == id, ct)
-            ?? throw new DomainException("PRINT_JOB_NOT_FOUND", "打印作业不存在", 404);
-        if (job.Status != PrintJobStatus.FAILED)
+        var updated = await _db.PrintJobs
+            .Where(x => x.Id == id && x.Status == PrintJobStatus.FAILED)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, PrintJobStatus.GENERATING)
+                .SetProperty(x => x.ErrorCode, (string?)null)
+                .SetProperty(x => x.ErrorMessage, (string?)null)
+                .SetProperty(x => x.FilePath, (string?)null)
+                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
+        if (updated == 0)
+        {
+            var exists = await _db.PrintJobs.AsNoTracking().AnyAsync(x => x.Id == id, ct);
+            if (!exists)
+                throw new DomainException("PRINT_JOB_NOT_FOUND", "打印作业不存在", 404);
             throw new DomainException("PRINT_JOB_STATUS_INVALID", "只有 FAILED 作业可重试", 409);
+        }
 
-        job.Status = PrintJobStatus.READY;
-        job.ErrorCode = null;
-        job.ErrorMessage = null;
-        job.FilePath = await WritePdfAsync(job.Id, job.Items.OrderBy(x => x.Seq).Select(x => x.ReadableText), ct);
-        job.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync(ct);
+        var job = await _db.PrintJobs.Include(x => x.Items).FirstAsync(x => x.Id == id, ct);
+        await GeneratePdfAsync(job, ct);
         return Map(job);
     }
 
@@ -235,7 +241,7 @@ public class PrintService
         return (job.FilePath, $"{job.TemplateCode}-{job.Id}.pdf");
     }
 
-    private async Task<PrintJob> CreateReadyJobAsync(
+    private async Task<PrintJob> CreateJobAsync(
         string? bizType,
         Guid? bizId,
         string templateCode,
@@ -257,7 +263,7 @@ public class PrintService
             BizType = bizType,
             BizId = bizId,
             TemplateCode = templateCode,
-            Status = PrintJobStatus.READY,
+            Status = PrintJobStatus.GENERATING,
             CreatedBy = userId,
             CreatedByName = userName,
             CreatedAt = DateTime.UtcNow,
@@ -279,43 +285,53 @@ public class PrintService
         _db.PrintJobs.Add(job);
         await _db.SaveChangesAsync(ct);
         if (createPdf)
+            await GeneratePdfAsync(job, ct);
+        else
         {
-            job.FilePath = await WritePdfAsync(job.Id, itemList.Select(x => x.Readable), ct);
+            job.Status = PrintJobStatus.READY;
             job.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(ct);
         }
         return job;
     }
 
-    private async Task<string> WritePdfAsync(Guid jobId, IEnumerable<string> pages, CancellationToken ct)
+    private async Task GeneratePdfAsync(PrintJob job, CancellationToken ct)
     {
-        Directory.CreateDirectory(_root);
-        var path = Path.Combine(_root, $"{jobId:N}.pdf");
-        var body = string.Join("\n\n---\n\n", pages).Replace("\\", "\\\\").Replace("(", "\\(").Replace(")", "\\)");
-        var pdf = $"""
-            %PDF-1.4
-            1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
-            2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
-            3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
-            4 0 obj << /Length {body.Length + 64} >> stream
-            BT /F1 12 Tf 40 790 Td ({body}) Tj ET
-            endstream endobj
-            5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
-            xref
-            0 6
-            0000000000 65535 f
-            0000000010 00000 n
-            0000000060 00000 n
-            0000000117 00000 n
-            0000000230 00000 n
-            0000000360 00000 n
-            trailer << /Root 1 0 R /Size 6 >>
-            startxref
-            460
-            %%EOF
-            """;
-        await File.WriteAllTextAsync(path, pdf, Encoding.UTF8, ct);
-        return path;
+        string? tempPath = null;
+        try
+        {
+            Directory.CreateDirectory(_root);
+            var finalPath = Path.Combine(_root, $"{job.Id:N}.pdf");
+            tempPath = Path.Combine(_root, $".{job.Id:N}.{Guid.CreateVersion7():N}.tmp");
+            var items = job.Items.OrderBy(x => x.Seq)
+                .Select(x => (x.Content, x.ReadableText))
+                .ToList();
+            await PdfPrintDocument.WriteAsync(tempPath, items, ct);
+            File.Move(tempPath, finalPath, overwrite: true);
+            tempPath = null;
+
+            job.FilePath = finalPath;
+            job.Status = PrintJobStatus.READY;
+            job.ErrorCode = null;
+            job.ErrorMessage = null;
+            job.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            if (tempPath != null && File.Exists(tempPath))
+                File.Delete(tempPath);
+            job.FilePath = null;
+            job.Status = PrintJobStatus.FAILED;
+            job.ErrorCode = "PRINT_GENERATION_FAILED";
+            job.ErrorMessage = "打印文件生成失败";
+            job.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(CancellationToken.None);
+        }
     }
 
     private static IEnumerable<(string LabelType, string Content, string Readable, decimal? Quantity)> SplitBatchLabels(string materialCode, string materialName, string batchNo, decimal actualQty, decimal qtyPerLabel)

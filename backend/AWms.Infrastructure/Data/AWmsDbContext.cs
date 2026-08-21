@@ -309,6 +309,9 @@ public class AWmsDbContext : DbContext
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.ReceiptId, x.LineNo }).IsUnique();
+            e.HasIndex(x => new { x.ReceiptId, x.OrderLineId })
+                .IsUnique()
+                .HasFilter("\"OrderLineId\" IS NOT NULL");
             e.HasIndex(x => x.OrderLineId);
             e.HasIndex(x => new { x.MaterialId, x.BatchId, x.Status });
             e.Property(x => x.ExpectedQty).HasColumnType("decimal(18,4)");
@@ -374,6 +377,7 @@ public class AWmsDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.LocationId, x.SubjectId }).IsUnique();
             e.Property(x => x.Quantity).HasColumnType("decimal(18,4)");
+            e.Property(x => x.Version).IsConcurrencyToken();
             e.HasOne(x => x.Location).WithMany().HasForeignKey(x => x.LocationId);
             e.HasOne(x => x.Subject).WithMany().HasForeignKey(x => x.SubjectId);
         });

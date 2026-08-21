@@ -19,6 +19,7 @@ public class PrintController : ControllerBase
 
     [HttpPost("inbound-order-qr")]
     [RequirePermission("action.print.create")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<ApiResponse<PrintJobDto>>> InboundOrderQr([FromBody] InboundOrderQrPrintRequest request, CancellationToken ct)
     {
         var result = await _service.PrintInboundOrderQrAsync(request, User.UserId(), User.UserDisplayName(), ct);
@@ -27,6 +28,7 @@ public class PrintController : ControllerBase
 
     [HttpPost("external-labels")]
     [RequirePermission("action.print.create")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<ApiResponse<PrintJobDto>>> ExternalLabels([FromBody] ExternalLabelPrintRequest request, CancellationToken ct)
     {
         var result = await _service.PrintExternalLabelsAsync(request, User.UserId(), User.UserDisplayName(), ct);
@@ -35,6 +37,7 @@ public class PrintController : ControllerBase
 
     [HttpPost("unique-labels")]
     [RequirePermission("action.print.create")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<ApiResponse<PrintJobDto>>> UniqueLabels([FromBody] UniqueLabelsPrintRequest request, CancellationToken ct)
     {
         var result = await _service.PrintUniqueLabelsAsync(request, User.UserId(), User.UserDisplayName(), ct);
@@ -43,6 +46,7 @@ public class PrintController : ControllerBase
 
     [HttpPost("batch-labels")]
     [RequirePermission("action.print.create")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<ApiResponse<PrintJobDto>>> BatchLabels([FromBody] BatchLabelsPrintRequest request, CancellationToken ct)
     {
         var result = await _service.PrintBatchLabelsAsync(request, User.UserId(), User.UserDisplayName(), ct);
@@ -51,6 +55,7 @@ public class PrintController : ControllerBase
 
     [HttpPost("batch-label-one")]
     [RequirePermission("action.print.create")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<ApiResponse<PrintJobDto>>> BatchLabelOne([FromBody] BatchLabelOnePrintRequest request, CancellationToken ct)
     {
         var result = await _service.PrintBatchLabelOneAsync(request, User.UserId(), User.UserDisplayName(), ct);
@@ -73,6 +78,7 @@ public class PrintController : ControllerBase
 
     [HttpPost("jobs/{id:guid}/retry")]
     [RequirePermission("action.print.create")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<ApiResponse<PrintJobDto>>> Retry(Guid id, CancellationToken ct)
     {
         var result = await _service.RetryAsync(id, ct);

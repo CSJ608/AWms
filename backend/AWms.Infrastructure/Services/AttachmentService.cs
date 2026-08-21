@@ -1,9 +1,13 @@
+using System.Collections.Concurrent;
 using AWms.Domain.Dtos.Attachments;
 using AWms.Domain.Dtos.Common;
 using AWms.Domain.Entities;
 using AWms.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Processing;
 
 namespace AWms.Infrastructure.Services;
 
@@ -13,6 +17,7 @@ public class AttachmentService
     {
         "image/jpeg", "image/png", "image/webp"
     };
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> ThumbnailLocks = new();
 
     private readonly AWmsDbContext _db;
     private readonly string _root;
@@ -72,11 +77,16 @@ public class AttachmentService
         return Map(attachment);
     }
 
-    public async Task<PagedResult<AttachmentItem>> SearchAsync(AttachmentSearchRequest request, CancellationToken ct = default)
+    public async Task<PagedResult<AttachmentItem>> SearchAsync(
+        AttachmentSearchRequest request,
+        Guid userId,
+        CancellationToken ct = default)
     {
         var page = Math.Max(request.Page ?? 1, 1);
         var pageSize = request.PageSize is null or <= 0 ? 20 : request.PageSize.Value;
-        var query = _db.Attachments.AsNoTracking().AsQueryable();
+        var query = _db.Attachments.AsNoTracking()
+            .Where(x => x.BizId != null || x.UploadedBy == userId)
+            .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(request.BizType))
             query = query.Where(x => x.BizType == request.BizType);
@@ -99,13 +109,71 @@ public class AttachmentService
         await _db.Attachments.FirstOrDefaultAsync(x => x.Id == id, ct)
             ?? throw new DomainException("ATTACHMENT_NOT_FOUND", "附件不存在", 404);
 
-    public async Task<(string Path, string MimeType, string FileName)> GetFileAsync(Guid id, CancellationToken ct = default)
+    public async Task<(string Path, string MimeType, string FileName)> GetFileAsync(
+        Guid id,
+        Guid userId,
+        CancellationToken ct = default)
     {
         var attachment = await _db.Attachments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct)
             ?? throw new DomainException("ATTACHMENT_NOT_FOUND", "附件不存在", 404);
+        if (attachment.BizId == null && attachment.UploadedBy != userId)
+            throw new DomainException("FORBIDDEN", "无权查看该附件", 403);
         if (!File.Exists(attachment.Path))
             throw new DomainException("ATTACHMENT_NOT_FOUND", "附件文件不存在", 404);
         return (attachment.Path, attachment.MimeType, attachment.FileName);
+    }
+
+    public async Task<(string Path, string MimeType, string FileName)> GetThumbnailAsync(
+        Guid id,
+        Guid userId,
+        CancellationToken ct = default)
+    {
+        var source = await GetFileAsync(id, userId, ct);
+        var directory = Path.Combine(Path.GetDirectoryName(source.Path)!, ".thumbnails");
+        var thumbnailPath = Path.Combine(directory, $"{id:N}.jpg");
+        if (File.Exists(thumbnailPath))
+            return (thumbnailPath, "image/jpeg", $"{Path.GetFileNameWithoutExtension(source.FileName)}-thumbnail.jpg");
+
+        var semaphore = ThumbnailLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+        await semaphore.WaitAsync(ct);
+        try
+        {
+            if (!File.Exists(thumbnailPath))
+            {
+                Directory.CreateDirectory(directory);
+                var tempPath = Path.Combine(directory, $".{id:N}.{Guid.CreateVersion7():N}.tmp");
+                try
+                {
+                    using var image = await Image.LoadAsync(source.Path, ct);
+                    image.Mutate(x => x.AutoOrient().Resize(new ResizeOptions
+                    {
+                        Mode = ResizeMode.Max,
+                        Size = new Size(320, 320)
+                    }));
+                    await image.SaveAsJpegAsync(tempPath, new JpegEncoder { Quality = 78 }, ct);
+                    File.Move(tempPath, thumbnailPath, overwrite: true);
+                }
+                catch (InvalidImageContentException)
+                {
+                    throw new DomainException("ATTACHMENT_TYPE_INVALID", "附件内容不是有效图片", 400);
+                }
+                catch (UnknownImageFormatException)
+                {
+                    throw new DomainException("ATTACHMENT_TYPE_INVALID", "附件内容不是有效图片", 400);
+                }
+                finally
+                {
+                    if (File.Exists(tempPath))
+                        File.Delete(tempPath);
+                }
+            }
+        }
+        finally
+        {
+            semaphore.Release();
+        }
+
+        return (thumbnailPath, "image/jpeg", $"{Path.GetFileNameWithoutExtension(source.FileName)}-thumbnail.jpg");
     }
 
     public async Task DeleteAsync(Guid id, Guid userId, CancellationToken ct = default)

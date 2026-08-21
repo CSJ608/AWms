@@ -12,6 +12,9 @@ using AWms.Domain.Enums;
 using AWms.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace AWms.IntegrationTests;
 
@@ -336,10 +339,17 @@ public class InboundReceiptChainApiTests : IClassFixture<ApiTestFixture>
     private async Task<AttachmentItem> UploadPhotoAsync()
     {
         using var form = new MultipartFormDataContent();
-        var content = new ByteArrayContent(new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 });
-        content.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
-        form.Add(content, "file", "photo.jpg");
-        var response = await _client.PostAsync("/api/attachments", form);
+        using var image = new Image<Rgba32>(2, 2, new Rgba32(30, 120, 210));
+        using var pngStream = new MemoryStream();
+        image.Save(pngStream, new PngEncoder());
+        var png = pngStream.ToArray();
+        var content = new ByteArrayContent(png);
+        content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        form.Add(content, "file", "photo.png");
+        form.Add(new StringContent("RECEIPT"), "bizType");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/attachments") { Content = form };
+        request.Headers.Add("Idempotency-Key", $"attachment-{Guid.CreateVersion7():N}");
+        var response = await _client.SendAsync(request);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ApiResponse<AttachmentItem>>(JsonOpts))!.Data!;
     }

@@ -26,6 +26,7 @@ public class QualityChecksController : ControllerBase
 
     [HttpPost("{checkId:guid}/resolve")]
     [RequirePermission("action.quality.resolve")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<ApiResponse<ReceiptItem>>> Resolve(Guid checkId, [FromBody] ResolveQualityCheckRequest request, CancellationToken ct)
     {
         var result = await _service.ResolveQualityCheckAsync(checkId, request, User.UserId(), User.UserDisplayName(), ct);
