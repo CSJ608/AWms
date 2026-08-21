@@ -163,6 +163,76 @@ public class InboundReceiptChainRemediationApiTests : IClassFixture<ApiTestFixtu
     }
 
     [Fact]
+    public async Task 附件上传缺IdempotencyKey_在写文件和业务记录前拒绝()
+    {
+        await ResetAndLoginAsync();
+        using var request = AttachmentUploadRequest("missing-key.png", "RECEIPT", null);
+
+        using var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("VALIDATION_ERROR", (await ErrorAsync(response)).Code);
+        using var scope = _fixture.Factory.Services.CreateScope();
+        Assert.Empty(await scope.ServiceProvider.GetRequiredService<AWmsDbContext>().Attachments.ToListAsync());
+        Assert.Empty(Directory.GetFiles(_fixture.AttachmentsRoot, "*", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public async Task 附件上传重复IdempotencyKey_返回首次结果且只保存一份()
+    {
+        await ResetAndLoginAsync();
+        var key = Key();
+        using var firstRequest = AttachmentUploadRequest("first.png", "RECEIPT", key);
+        using var firstResponse = await _client.SendAsync(firstRequest);
+        firstResponse.EnsureSuccessStatusCode();
+        var first = (await firstResponse.Content.ReadFromJsonAsync<ApiResponse<AttachmentItem>>(JsonOpts))!.Data!;
+
+        using var replayRequest = AttachmentUploadRequest("replay.png", "RECEIPT", key);
+        using var replayResponse = await _client.SendAsync(replayRequest);
+        replayResponse.EnsureSuccessStatusCode();
+        var replay = (await replayResponse.Content.ReadFromJsonAsync<ApiResponse<AttachmentItem>>(JsonOpts))!.Data!;
+
+        Assert.Equal(first.Id, replay.Id);
+        Assert.Equal("first.png", replay.FileName);
+        using var scope = _fixture.Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AWmsDbContext>();
+        Assert.Single(await db.Attachments.ToListAsync());
+        Assert.Single(await db.IdempotencyRecords.Where(x => x.Key == key).ToListAsync());
+        Assert.Single(Directory.GetFiles(_fixture.AttachmentsRoot, "*", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public async Task 附件上传并发同IdempotencyKey_两个请求共享首次结果且只保存一份()
+    {
+        await ResetAndLoginAsync();
+        var key = Key();
+        using var firstRequest = AttachmentUploadRequest("concurrent-a.png", "RECEIPT", key);
+        using var secondRequest = AttachmentUploadRequest("concurrent-b.png", "RECEIPT", key);
+
+        var responses = await Task.WhenAll(
+            _client.SendAsync(firstRequest),
+            _client.SendAsync(secondRequest));
+        try
+        {
+            Assert.All(responses, x => Assert.Equal(HttpStatusCode.Created, x.StatusCode));
+            var items = await Task.WhenAll(responses.Select(async response =>
+                (await response.Content.ReadFromJsonAsync<ApiResponse<AttachmentItem>>(JsonOpts))!.Data!));
+            Assert.Equal(items[0].Id, items[1].Id);
+
+            using var scope = _fixture.Factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AWmsDbContext>();
+            Assert.Single(await db.Attachments.ToListAsync());
+            Assert.Single(await db.IdempotencyRecords.Where(x => x.Key == key).ToListAsync());
+            Assert.Single(Directory.GetFiles(_fixture.AttachmentsRoot, "*", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            foreach (var response in responses)
+                response.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task 首次响应未消费后同key重试_重放首次结果且TTL后不重复入账()
     {
         await ResetAndLoginAsync();
@@ -204,14 +274,26 @@ public class InboundReceiptChainRemediationApiTests : IClassFixture<ApiTestFixtu
             PrReceiptRequest(seed, "2.0000", null, new BatchPropsRequest("PHOTO", null, null, null, null), new[] { photo.Id }),
             Key());
 
-        var thumbnail = await _client.GetAsync($"/api/attachments/{photo.Id}/thumbnail");
-        Assert.Equal(HttpStatusCode.OK, thumbnail.StatusCode);
-        Assert.Equal("image/jpeg", thumbnail.Content.Headers.ContentType?.MediaType);
-        var thumbnailBytes = await thumbnail.Content.ReadAsByteArrayAsync();
-        Assert.True(thumbnailBytes.Length > 2);
-        Assert.Equal(0xFF, thumbnailBytes[0]);
-        Assert.Equal(0xD8, thumbnailBytes[1]);
-        Assert.NotEqual(TinyPng, thumbnailBytes);
+        var thumbnails = await Task.WhenAll(
+            _client.GetAsync($"/api/attachments/{photo.Id}/thumbnail"),
+            _client.GetAsync($"/api/attachments/{photo.Id}/thumbnail"));
+        try
+        {
+            Assert.All(thumbnails, x => Assert.Equal(HttpStatusCode.OK, x.StatusCode));
+            Assert.All(thumbnails, x => Assert.Equal("image/jpeg", x.Content.Headers.ContentType?.MediaType));
+            var thumbnailBytes = await Task.WhenAll(thumbnails.Select(x => x.Content.ReadAsByteArrayAsync()));
+            Assert.Equal(thumbnailBytes[0], thumbnailBytes[1]);
+            Assert.True(thumbnailBytes[0].Length > 2);
+            Assert.Equal(0xFF, thumbnailBytes[0][0]);
+            Assert.Equal(0xD8, thumbnailBytes[0][1]);
+            Assert.NotEqual(TinyPng, thumbnailBytes[0]);
+            Assert.Empty(Directory.GetFiles(_fixture.AttachmentsRoot, "*.tmp", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            foreach (var thumbnail in thumbnails)
+                thumbnail.Dispose();
+        }
 
         var unrelated = CreateClientWithPermissions("route.master-data");
         Assert.Equal(HttpStatusCode.Forbidden, (await unrelated.GetAsync($"/api/attachments/{photo.Id}")).StatusCode);
@@ -426,16 +508,23 @@ public class InboundReceiptChainRemediationApiTests : IClassFixture<ApiTestFixtu
 
     private async Task<AttachmentItem> UploadPhotoAsync(string bizType)
     {
-        using var form = new MultipartFormDataContent();
-        var content = new ByteArrayContent(TinyPng);
-        content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
-        form.Add(content, "file", "photo.png");
-        form.Add(new StringContent(bizType), "bizType");
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/attachments") { Content = form };
-        request.Headers.Add("Idempotency-Key", Key());
-        var response = await _client.SendAsync(request);
+        using var request = AttachmentUploadRequest("photo.png", bizType, Key());
+        using var response = await _client.SendAsync(request);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ApiResponse<AttachmentItem>>(JsonOpts))!.Data!;
+    }
+
+    private static HttpRequestMessage AttachmentUploadRequest(string fileName, string bizType, string? key)
+    {
+        var form = new MultipartFormDataContent();
+        var content = new ByteArrayContent(TinyPng);
+        content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        form.Add(content, "file", fileName);
+        form.Add(new StringContent(bizType), "bizType");
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/attachments") { Content = form };
+        if (key != null)
+            request.Headers.Add("Idempotency-Key", key);
+        return request;
     }
 
     private async Task<ScanResult> ParseAsync(string content)

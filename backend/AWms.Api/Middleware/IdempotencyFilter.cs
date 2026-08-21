@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Data;
 using System.Text.Json;
 using AWms.Domain.Dtos.Common;
@@ -13,7 +12,6 @@ namespace AWms.Api.Middleware;
 
 public class IdempotencyFilter : IAsyncActionFilter
 {
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> KeyLocks = new();
     private static readonly TimeSpan Ttl = TimeSpan.FromHours(24);
 
     private readonly IdempotencyService _service;
@@ -55,8 +53,6 @@ public class IdempotencyFilter : IAsyncActionFilter
             return;
         }
 
-        var semaphore = KeyLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
-        await semaphore.WaitAsync(context.HttpContext.RequestAborted);
         try
         {
             await using var transaction = await _db.Database.BeginTransactionAsync(
@@ -116,10 +112,6 @@ public class IdempotencyFilter : IAsyncActionFilter
         {
             _logger.LogError(ex, "幂等处理失败（Key={Key}）", key);
             throw;
-        }
-        finally
-        {
-            semaphore.Release();
         }
     }
 

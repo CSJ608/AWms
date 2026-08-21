@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using AWms.Domain.Dtos.Attachments;
 using AWms.Domain.Dtos.Common;
 using AWms.Domain.Entities;
@@ -17,8 +16,6 @@ public class AttachmentService
     {
         "image/jpeg", "image/png", "image/webp"
     };
-    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> ThumbnailLocks = new();
-
     private readonly AWmsDbContext _db;
     private readonly string _root;
 
@@ -134,43 +131,38 @@ public class AttachmentService
         if (File.Exists(thumbnailPath))
             return (thumbnailPath, "image/jpeg", $"{Path.GetFileNameWithoutExtension(source.FileName)}-thumbnail.jpg");
 
-        var semaphore = ThumbnailLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
-        await semaphore.WaitAsync(ct);
+        Directory.CreateDirectory(directory);
+        var tempPath = Path.Combine(directory, $".{id:N}.{Guid.CreateVersion7():N}.tmp");
         try
         {
-            if (!File.Exists(thumbnailPath))
+            using var image = await Image.LoadAsync(source.Path, ct);
+            image.Mutate(x => x.AutoOrient().Resize(new ResizeOptions
             {
-                Directory.CreateDirectory(directory);
-                var tempPath = Path.Combine(directory, $".{id:N}.{Guid.CreateVersion7():N}.tmp");
-                try
-                {
-                    using var image = await Image.LoadAsync(source.Path, ct);
-                    image.Mutate(x => x.AutoOrient().Resize(new ResizeOptions
-                    {
-                        Mode = ResizeMode.Max,
-                        Size = new Size(320, 320)
-                    }));
-                    await image.SaveAsJpegAsync(tempPath, new JpegEncoder { Quality = 78 }, ct);
-                    File.Move(tempPath, thumbnailPath, overwrite: true);
-                }
-                catch (InvalidImageContentException)
-                {
-                    throw new DomainException("ATTACHMENT_TYPE_INVALID", "附件内容不是有效图片", 400);
-                }
-                catch (UnknownImageFormatException)
-                {
-                    throw new DomainException("ATTACHMENT_TYPE_INVALID", "附件内容不是有效图片", 400);
-                }
-                finally
-                {
-                    if (File.Exists(tempPath))
-                        File.Delete(tempPath);
-                }
+                Mode = ResizeMode.Max,
+                Size = new Size(320, 320)
+            }));
+            await image.SaveAsJpegAsync(tempPath, new JpegEncoder { Quality = 78 }, ct);
+            try
+            {
+                File.Move(tempPath, thumbnailPath);
             }
+            catch (IOException) when (File.Exists(thumbnailPath))
+            {
+                // Another request completed the same immutable thumbnail first.
+            }
+        }
+        catch (InvalidImageContentException)
+        {
+            throw new DomainException("ATTACHMENT_TYPE_INVALID", "附件内容不是有效图片", 400);
+        }
+        catch (UnknownImageFormatException)
+        {
+            throw new DomainException("ATTACHMENT_TYPE_INVALID", "附件内容不是有效图片", 400);
         }
         finally
         {
-            semaphore.Release();
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
         }
 
         return (thumbnailPath, "image/jpeg", $"{Path.GetFileNameWithoutExtension(source.FileName)}-thumbnail.jpg");
