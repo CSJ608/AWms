@@ -106,7 +106,7 @@ describe('PDA 菜单与入库作业', () => {
     await scan(user, label({ v: 1, t: 'U', s: 'MAT-004', u: 'BOX-20260820-0001', q: '5.0000' }))
     expect(await screen.findByTestId('receiving-qty')).toHaveValue('5.0000')
     await scan(user, label({ v: 1, t: 'U', s: 'MAT-004', u: 'BOX-20260820-0002', q: '5.0000' }))
-    expect(screen.getByTestId('receiving-qty')).toHaveValue('10.0000')
+    await waitFor(() => expect(screen.getByTestId('receiving-qty')).toHaveValue('10.0000'))
 
     await scan(user, label({ v: 1, t: 'U', s: 'MAT-004', u: 'BOX-20260820-0002', q: '5.0000' }))
     expect(await screen.findByText('已收过')).toBeInTheDocument()
