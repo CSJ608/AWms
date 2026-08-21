@@ -1,6 +1,6 @@
-# AWms 前端（第 3 批 · 基础批）
+# AWms 前端
 
-Web 后台 + PDA（双路由树，PDA 第 4 批实现）同库前端。
+Web 后台 + PDA 双路由树同库前端。当前已完成基础平台和主数据页面；PDA 作业流程待第 4 批实现。
 
 ## 技术栈
 
@@ -13,7 +13,7 @@ TanStack Query/Table 8 · react-hook-form + zod 4 · i18next · Vitest + RTL · 
 pnpm dev    # 开发（默认 MSW mock，VITE_USE_MOCK=false 切真实后端）
 pnpm build  # tsc -b 严格类型检查 + 生产构建（含 PWA SW，不缓存 API）
 pnpm lint   # oxlint 0 error
-pnpm test   # Vitest 全绿（MSW node server，同一套契约 handlers）
+pnpm test   # 运行 Vitest 全套测试（MSW node server，同一套契约 handlers）
 ```
 
 ## 目录

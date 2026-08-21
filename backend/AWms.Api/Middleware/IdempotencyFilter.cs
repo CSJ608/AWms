@@ -1,40 +1,50 @@
-using System.Collections.Concurrent;
+using System.Data;
 using System.Text.Json;
 using AWms.Domain.Dtos.Common;
+using AWms.Domain.Enums;
+using AWms.Infrastructure.Data;
 using AWms.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.EntityFrameworkCore;
 
 namespace AWms.Api.Middleware;
 
-/// <summary>
-/// 幂等过滤器：写端点（POST/PUT/PATCH/DELETE）读取 Idempotency-Key（契约 2.6 / 规范 §2.4）。
-/// - 同 key 重复请求返回首次结果（含错误响应）；TTL 24h；
-/// - 并发同 key：进程内信号量 + 数据库 Key 唯一索引兜底，首个请求先预留。
-/// </summary>
 public class IdempotencyFilter : IAsyncActionFilter
 {
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> KeyLocks = new();
     private static readonly TimeSpan Ttl = TimeSpan.FromHours(24);
-    private static readonly TimeSpan MaxWaitForFirst = TimeSpan.FromSeconds(15);
-
 
     private readonly IdempotencyService _service;
+    private readonly AWmsDbContext _db;
     private readonly ILogger<IdempotencyFilter> _logger;
 
-    public IdempotencyFilter(IdempotencyService service, ILogger<IdempotencyFilter> logger)
+    public IdempotencyFilter(
+        IdempotencyService service,
+        AWmsDbContext db,
+        ILogger<IdempotencyFilter> logger)
     {
         _service = service;
+        _db = db;
         _logger = logger;
     }
 
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
-        var key = context.HttpContext.Request.Headers["Idempotency-Key"].FirstOrDefault();
         var method = context.HttpContext.Request.Method;
-        if (string.IsNullOrWhiteSpace(key) || method is not ("POST" or "PUT" or "PATCH" or "DELETE"))
+        if (method is not ("POST" or "PUT" or "PATCH" or "DELETE"))
         {
             await next();
+            return;
+        }
+
+        var requiresKey = context.ActionDescriptor.EndpointMetadata.OfType<RequireIdempotencyKeyAttribute>().Any();
+        var key = context.HttpContext.Request.Headers["Idempotency-Key"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            if (requiresKey)
+                context.Result = new BadRequestObjectResult(ApiResponse.Error<object>("VALIDATION_ERROR", "Idempotency-Key 必填"));
+            else
+                await next();
             return;
         }
         if (key.Length > 128)
@@ -43,77 +53,56 @@ public class IdempotencyFilter : IAsyncActionFilter
             return;
         }
 
-        var sem = KeyLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
-        await sem.WaitAsync(context.HttpContext.RequestAborted);
         try
         {
-            var reservation = await _service.TryReserveAsync(key, Ttl, context.HttpContext.RequestAborted);
+            await using var transaction = await _db.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                context.HttpContext.RequestAborted);
+            await _service.LockKeyAsync(key, context.HttpContext.RequestAborted);
+
+            var reservation = await _service.TryReserveAsync(
+                key,
+                Ttl,
+                preserveCompleted: requiresKey,
+                ct: context.HttpContext.RequestAborted);
             if (!reservation.IsFirst)
             {
-                var existing = reservation.Existing;
-                if (existing == null)
-                {
-                    await next();
-                    return;
-                }
-
-                // 首个请求可能仍在处理（pending）：等待其完成，返回首次结果
-                var deadline = DateTime.UtcNow + MaxWaitForFirst;
-                while (string.IsNullOrEmpty(existing.ResponseJson) && existing.ExpiresAt > DateTime.UtcNow && DateTime.UtcNow < deadline)
-                {
-                    await Task.Delay(100, context.HttpContext.RequestAborted);
-                    existing = await _service.GetAsync(key, context.HttpContext.RequestAborted) ?? existing;
-                }
-
-                if (!string.IsNullOrEmpty(existing.ResponseJson))
-                {
-                    context.Result = new ContentResult
-                    {
-                        StatusCode = existing.StatusCode,
-                        Content = existing.ResponseJson,
-                        ContentType = "application/json; charset=utf-8"
-                    };
-                    return;
-                }
-
-                context.Result = new ObjectResult(ApiResponse.Error<object>("CONFLICT", "同 key 写请求处理中，请稍后重试"))
-                {
-                    StatusCode = StatusCodes.Status409Conflict
-                };
+                await transaction.CommitAsync(CancellationToken.None);
+                context.Result = Replay(reservation.Existing!);
                 return;
             }
 
-            // 首个请求：执行并捕获结果（成功与 DomainException 错误都写入记录）
+            await transaction.CreateSavepointAsync("business", context.HttpContext.RequestAborted);
             var executed = await next();
-
-            if (executed.Exception is DomainException dex)
+            if (executed.Exception is DomainException domainException)
             {
-                var json = JsonSerializer.Serialize(ApiResponse.Error<object>(dex.Code, dex.Message), ApiJsonOptions.Serializer);
-                await _service.CompleteAsync(key, dex.StatusCode, json, context.HttpContext.RequestAborted);
+                await transaction.RollbackToSavepointAsync("business", CancellationToken.None);
+                _db.ChangeTracker.Clear();
+
+                var json = JsonSerializer.Serialize(
+                    ApiResponse.Error<object>(domainException.Code, domainException.Message),
+                    ApiJsonOptions.Serializer);
+                await _service.CompleteAsync(key, domainException.StatusCode, json, CancellationToken.None);
+                await transaction.CommitAsync(CancellationToken.None);
+
                 executed.ExceptionHandled = true;
                 executed.Result = new ContentResult
                 {
-                    StatusCode = dex.StatusCode,
+                    StatusCode = domainException.StatusCode,
                     Content = json,
                     ContentType = "application/json; charset=utf-8"
                 };
+                return;
             }
-            else if (executed.Result is ObjectResult { Value: not null } obj)
+            if (executed.Exception != null)
             {
-                var json = JsonSerializer.Serialize(obj.Value, ApiJsonOptions.Serializer);
-                var status = obj.StatusCode ?? StatusCodes.Status200OK;
-                await _service.CompleteAsync(key, status, json, context.HttpContext.RequestAborted);
+                await transaction.RollbackAsync(CancellationToken.None);
+                return;
             }
-            else
-            {
-                var status = executed.Result switch
-                {
-                    StatusCodeResult sc => sc.StatusCode,
-                    EmptyResult => StatusCodes.Status204NoContent,
-                    _ => StatusCodes.Status200OK
-                };
-                await _service.CompleteAsync(key, status, string.Empty, context.HttpContext.RequestAborted);
-            }
+
+            var (statusCode, responseJson) = SerializeResult(executed.Result);
+            await _service.CompleteAsync(key, statusCode, responseJson, CancellationToken.None);
+            await transaction.CommitAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)
         {
@@ -124,10 +113,43 @@ public class IdempotencyFilter : IAsyncActionFilter
             _logger.LogError(ex, "幂等处理失败（Key={Key}）", key);
             throw;
         }
-        finally
+    }
+
+    private static IActionResult Replay(AWms.Domain.Entities.IdempotencyRecord record)
+    {
+        if (record.Status != IdempotencyStatus.COMPLETED)
         {
-            sem.Release();
+            return new ObjectResult(ApiResponse.Error<object>("CONFLICT", "同 key 写请求处理中，请稍后重试"))
+            {
+                StatusCode = StatusCodes.Status409Conflict
+            };
         }
+        if (string.IsNullOrEmpty(record.ResponseJson))
+            return new StatusCodeResult(record.StatusCode);
+
+        return new ContentResult
+        {
+            StatusCode = record.StatusCode,
+            Content = record.ResponseJson,
+            ContentType = "application/json; charset=utf-8"
+        };
+    }
+
+    private static (int StatusCode, string ResponseJson) SerializeResult(IActionResult? result)
+    {
+        if (result is ObjectResult { Value: not null } objectResult)
+        {
+            return (
+                objectResult.StatusCode ?? StatusCodes.Status200OK,
+                JsonSerializer.Serialize(objectResult.Value, ApiJsonOptions.Serializer));
+        }
+
+        var status = result switch
+        {
+            StatusCodeResult statusCodeResult => statusCodeResult.StatusCode,
+            EmptyResult => StatusCodes.Status204NoContent,
+            _ => StatusCodes.Status200OK
+        };
+        return (status, string.Empty);
     }
 }
-

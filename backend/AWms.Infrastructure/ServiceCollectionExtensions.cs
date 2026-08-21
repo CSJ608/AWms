@@ -37,6 +37,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ImportExportService>();
         services.AddScoped<IdempotencyService>();
         services.AddScoped<AdminSeedService>();
+        services.AddScoped<InboundOrderService>();
+        services.AddScoped<ReceiptService>();
+        services.AddScoped<AttachmentService>();
+        services.AddScoped<PrintService>();
+        services.AddScoped<ScanService>();
 
         return services;
     }
