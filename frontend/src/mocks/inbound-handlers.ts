@@ -164,7 +164,7 @@ function scanDocument(order: InboundOrder): ScanDocument {
     warehouseId: order.warehouseId,
     warehouseCode: order.warehouseCode,
     status: order.status,
-    lines: structuredClone(order.lines),
+    lines: structuredClone(order.lines).map(({ id, ...line }) => ({ ...line, orderLineId: id })),
   }
 }
 

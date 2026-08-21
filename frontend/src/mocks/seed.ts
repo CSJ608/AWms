@@ -180,9 +180,9 @@ export const ALL_MENUS = {
     { path: '/system', titleKey: 'nav.system', groupKey: 'nav.group.settings', moduleCode: 'system', iconKey: 'shield', sort: 40 },
   ],
   pda: [
-    { code: 'receiving', titleKey: 'pda.receiving', moduleCode: 'inbound', sort: 10 },
-    { code: 'qc', titleKey: 'pda.qc', moduleCode: 'inbound', sort: 20 },
-    { code: 'putaway', titleKey: 'pda.putaway', moduleCode: 'inbound', sort: 30 },
+    { code: 'pda.receiving', titleKey: 'pda.receiving', moduleCode: 'inbound', sort: 10 },
+    { code: 'pda.qc', titleKey: 'pda.qc', moduleCode: 'inbound', sort: 20 },
+    { code: 'pda.putaway', titleKey: 'pda.putaway', moduleCode: 'inbound', sort: 30 },
   ],
 } as const
 
@@ -197,9 +197,10 @@ export function menusFor(username: string) {
 }
 
 function pdaActionPermission(code: string): string {
-  if (code === 'receiving') return 'action.receiving.create'
-  if (code === 'qc') return 'action.quality.check'
-  return 'action.putaway.create'
+  if (code === 'pda.receiving' || code === 'receiving') return 'action.receiving.create'
+  if (code === 'pda.qc' || code === 'qc') return 'action.quality.check'
+  if (code === 'pda.putaway' || code === 'putaway') return 'action.putaway.create'
+  return ''
 }
 
 // ── 物料 ──────────────────────────────────────────────

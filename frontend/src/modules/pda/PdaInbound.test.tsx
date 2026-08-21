@@ -2,7 +2,9 @@ import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { renderApp, seedSession, makeOperatorSession, makeSupervisorSession } from '@/test/utils'
+import { useLocation } from 'react-router-dom'
+import { AppRoutes } from '@/App'
+import { renderApp, seedSession, makeAdminSession, makeOperatorSession, makeSupervisorSession } from '@/test/utils'
 import { server } from '@/mocks/server'
 import { MOCK_IDS } from '@/mocks/seed'
 import { db } from '@/mocks/db'
@@ -18,37 +20,74 @@ async function scan(user: ReturnType<typeof userEvent.setup>, content: string) {
 }
 
 describe('PDA 菜单与入库作业', () => {
-  it('收货、质检、上架角色均可看到对应 PDA 入口', async () => {
-    seedSession(makeOperatorSession())
+  it('管理员权限下 /pda 渲染 3 个真实 code 入口且图标正常', async () => {
+    seedSession(makeAdminSession())
     renderApp('/pda')
 
     const menu = await screen.findByTestId('pda-menu')
-    expect(within(menu).getByRole('button', { name: '收货' })).toBeInTheDocument()
-    expect(within(menu).getByRole('button', { name: '质检' })).toBeInTheDocument()
-    expect(within(menu).getByRole('button', { name: '上架' })).toBeInTheDocument()
+    const titles = ['收货', '质检', '上架']
+    for (const title of titles) {
+      const button = within(menu).getByRole('button', { name: title })
+      expect(button).toBeInTheDocument()
+      expect(button.querySelector('svg[data-icon]')).toBeInTheDocument()
+    }
+    expect(makeAdminSession().menus.pda.map((entry) => entry.code)).toEqual(['pda.receiving', 'pda.qc', 'pda.putaway'])
   })
 
-  it('PDA 菜单同时受 menus.pda 与 action 权限过滤', async () => {
+  it('PDA 入口使用短路由，不把 pda.* 完整 code 拼进路径', async () => {
+    seedSession(makeAdminSession())
+    renderApp('/pda', (
+      <>
+        <AppRoutes />
+        <LocationProbe />
+      </>
+    ))
+    const user = userEvent.setup()
+    const cases = [
+      { title: '收货', path: '/pda/receiving' },
+      { title: '质检', path: '/pda/qc' },
+      { title: '上架', path: '/pda/putaway' },
+    ]
+
+    for (const item of cases) {
+      const menu = await screen.findByTestId('pda-menu')
+      await user.click(within(menu).getByRole('button', { name: item.title }))
+      expect(await screen.findByTestId('pda-location')).toHaveTextContent(item.path)
+      expect(screen.queryByTestId('pda-menu')).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: '返回' }))
+      expect(await screen.findByTestId('pda-menu')).toBeInTheDocument()
+    }
+  })
+
+  it.each([
+    ['action.receiving.create', '收货', ['质检', '上架']],
+    ['action.quality.check', '质检', ['收货', '上架']],
+    ['action.putaway.create', '上架', ['收货', '质检']],
+  ])('缺少 %s 时仅隐藏 %s 入口', async (permission, hiddenTitle, visibleTitles) => {
     const supervisor = makeSupervisorSession()
-    const receivingOnly = {
+    const actions = ['action.receiving.create', 'action.quality.check', 'action.putaway.create']
+      .filter((action) => action !== permission)
+    const session = {
       ...supervisor,
-      permissions: ['route.inbound', 'action.receiving.create'],
+      permissions: ['route.inbound', ...actions],
       menus: {
         ...supervisor.menus,
         pda: [
-          { code: 'receiving', titleKey: 'pda.receiving', moduleCode: 'inbound', sort: 10 },
-          { code: 'qc', titleKey: 'pda.qc', moduleCode: 'inbound', sort: 20 },
-          { code: 'putaway', titleKey: 'pda.putaway', moduleCode: 'inbound', sort: 30 },
+          { code: 'pda.receiving', titleKey: 'pda.receiving', moduleCode: 'inbound', sort: 10 },
+          { code: 'pda.qc', titleKey: 'pda.qc', moduleCode: 'inbound', sort: 20 },
+          { code: 'pda.putaway', titleKey: 'pda.putaway', moduleCode: 'inbound', sort: 30 },
         ],
       },
     }
-    seedSession(receivingOnly)
-    server.use(http.get('/api/auth/me', () => HttpResponse.json({ code: 'OK', message: 'ok', data: receivingOnly })))
+    seedSession(session)
+    server.use(http.get('/api/auth/me', () => HttpResponse.json({ code: 'OK', message: 'ok', data: session })))
     renderApp('/pda')
+
     const menu = await screen.findByTestId('pda-menu')
-    expect(within(menu).getByRole('button', { name: '收货' })).toBeInTheDocument()
-    expect(within(menu).queryByRole('button', { name: '质检' })).not.toBeInTheDocument()
-    expect(within(menu).queryByRole('button', { name: '上架' })).not.toBeInTheDocument()
+    expect(within(menu).queryByRole('button', { name: hiddenTitle })).not.toBeInTheDocument()
+    for (const title of visibleTitles) {
+      expect(within(menu).getByRole('button', { name: title })).toBeInTheDocument()
+    }
   })
 
   it('收货扫 t=D 直接使用完整上下文，唯一码按 quantity 累加并防本地重复', async () => {
@@ -67,11 +106,49 @@ describe('PDA 菜单与入库作业', () => {
     await scan(user, label({ v: 1, t: 'U', s: 'MAT-004', u: 'BOX-20260820-0001', q: '5.0000' }))
     expect(await screen.findByTestId('receiving-qty')).toHaveValue('5.0000')
     await scan(user, label({ v: 1, t: 'U', s: 'MAT-004', u: 'BOX-20260820-0002', q: '5.0000' }))
-    expect(screen.getByTestId('receiving-qty')).toHaveValue('10.0000')
+    await waitFor(() => expect(screen.getByTestId('receiving-qty')).toHaveValue('10.0000'))
 
     await scan(user, label({ v: 1, t: 'U', s: 'MAT-004', u: 'BOX-20260820-0002', q: '5.0000' }))
     expect(await screen.findByText('已收过')).toBeInTheDocument()
     spy.mockRestore()
+  })
+
+  it('扫 PO 后自动选中第一行并显示批控物料行编辑器', async () => {
+    seedSession(makeOperatorSession())
+    renderApp('/pda/receiving')
+    const user = userEvent.setup()
+
+    await scan(user, label({ v: 1, t: 'D', ty: 'PO', d: 'PO-20260819-0001', wh: 'WH-01' }))
+    expect(await screen.findByText(/PO-20260819-0001/)).toBeInTheDocument()
+    expect(await screen.findByLabelText('单据行')).toHaveValue(MOCK_IDS.inboundOrderLine1)
+    expect(screen.getByTestId('receiving-qty')).toHaveValue('200.0000')
+    expect(screen.getByText('批次信息')).toBeInTheDocument()
+    expect(screen.getByLabelText('来源批号')).toBeInTheDocument()
+    expect(screen.queryByText('请扫描或手工选择物料')).not.toBeInTheDocument()
+  })
+
+  it('预建单提交收货时 orderLineId 使用解析返回的真实 UUID', async () => {
+    seedSession(makeOperatorSession())
+    const requests: Array<{ lines: Array<{ orderLineId: string | null }> }> = []
+    server.use(http.post('/api/receipts', async ({ request }) => {
+      requests.push(await request.json() as { lines: Array<{ orderLineId: string | null }> })
+      return HttpResponse.json({ code: 'OK', message: 'ok', data: seedReceipts[0] }, { status: 201 })
+    }))
+    renderApp('/pda/receiving')
+    const user = userEvent.setup()
+
+    await scan(user, label({ v: 1, t: 'D', ty: 'PO', d: 'PO-20260819-0001', wh: 'WH-01' }))
+    expect(await screen.findByLabelText('单据行')).toHaveValue(MOCK_IDS.inboundOrderLine1)
+    await user.type(screen.getByLabelText('来源批号'), 'REAL-BATCH-01')
+    fireEvent.change(screen.getByLabelText('生产日期'), { target: { value: '2026-08-20' } })
+    await user.click(screen.getByTestId('review-receipt'))
+    await screen.findByTestId('receiving-confirmation')
+    await user.click(screen.getByTestId('submit-receipt'))
+
+    expect(await screen.findByText('收货成功')).toBeInTheDocument()
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.lines).toHaveLength(1)
+    expect(requests[0]?.lines[0]).toMatchObject({ orderLineId: MOCK_IDS.inboundOrderLine1 })
   })
 
   it('收货照片上传失败保留当前输入并提示附件错误', async () => {
@@ -249,7 +326,9 @@ describe('PDA 菜单与入库作业', () => {
   it('同一次收货操作网络重试复用稳定 Idempotency-Key', async () => {
     seedSession(makeOperatorSession())
     const keys: string[] = []
+    const bodies: Array<{ lines: Array<{ orderLineId: string | null }> }> = []
     server.use(http.post('/api/receipts', async ({ request }) => {
+      bodies.push(await request.json() as { lines: Array<{ orderLineId: string | null }> })
       keys.push(request.headers.get('Idempotency-Key') ?? '')
       if (keys.length === 1) return HttpResponse.json({ code: 'NETWORK_ERROR', message: '响应中断', data: null }, { status: 503 })
       return HttpResponse.json({ code: 'OK', message: 'ok', data: seedReceipts[0] }, { status: 201 })
@@ -268,6 +347,9 @@ describe('PDA 菜单与入库作业', () => {
     expect(await screen.findByText('收货成功')).toBeInTheDocument()
     expect(keys).toHaveLength(2)
     expect(keys[0]).toBe(keys[1])
+    expect(bodies).toHaveLength(2)
+    expect(bodies[1]?.lines).toHaveLength(1)
+    expect(bodies[1]?.lines.every((line) => line.orderLineId === null)).toBe(true)
   })
 
   it('VERSION_CONFLICT 后刷新库存版本并使用新版本重试', async () => {
@@ -294,3 +376,7 @@ describe('PDA 菜单与入库作业', () => {
     expect(versions).toEqual([3, 4])
   })
 })
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="pda-location">{location.pathname}</div>
+}
