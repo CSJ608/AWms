@@ -5,10 +5,54 @@ import {
   apiResolveQualityException, apiUploadAttachment,
 } from '@/api'
 import { request } from '@/api/client'
-import type { AttachmentItem } from '@/api/types'
+import type { AttachmentItem, Receipt } from '@/api/types'
 import { seedSession } from '@/test/utils'
 import { db } from './db'
 import { MOCK_IDS, seedAttachments, seedBatches, seedInboundOrders, seedLocations, seedMaterials, seedPermissions, seedQualityChecks, seedReceipts, seedSources, seedUsers, seedWarehouses } from './seed'
+
+const receiptKeys = [
+  'id', 'receiptNo', 'warehouseId', 'warehouseCode', 'inboundOrderId', 'sourceDocType', 'sourceDocNo',
+  'sourceType', 'sourceCode', 'status', 'lines', 'stagingLocationId', 'stagingLocationCode', 'photos',
+  'operatorId', 'operatorName', 'occurredAt',
+].sort()
+
+const receiptLineKeys = [
+  'id', 'lineNo', 'orderLineId', 'orderLineNo', 'materialId', 'materialCode', 'materialName', 'batchId',
+  'batchNo', 'expectedQty', 'actualQty', 'qtyDiff', 'status', 'sourceBatchNo', 'productionDate', 'expiryDate',
+].sort()
+
+async function postRaw(path: string, body: unknown, idempotencyKey: string): Promise<Response> {
+  return fetch(`/api${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer mock-token-admin',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
+    },
+    body: JSON.stringify(body),
+  })
+}
+
+async function expectReceiptResponse(
+  response: Response,
+  expectedStatus: number,
+  expectedReceiptId: string,
+  expectedReceiptStatus: Receipt['status'],
+  expectedLineStatus: Receipt['lines'][number]['status'],
+): Promise<Receipt> {
+  expect(response.status).toBe(expectedStatus)
+  const envelope = await response.json() as { code: string; message: string; data: Receipt }
+  expect(envelope.code).toBe('OK')
+  expect(envelope.message).toBe('ok')
+  expect(Object.keys(envelope.data).sort()).toEqual(receiptKeys)
+  expect(Object.keys(envelope.data.lines[0]).sort()).toEqual(receiptLineKeys)
+  expect(envelope.data).toMatchObject({
+    id: expectedReceiptId,
+    status: expectedReceiptStatus,
+    lines: [{ status: expectedLineStatus }],
+  })
+  return envelope.data
+}
 
 describe('MSW 入库链契约边界', () => {
   beforeEach(() => {
@@ -76,6 +120,35 @@ describe('MSW 入库链契约边界', () => {
 
     const putawayBeforeResolve = await apiListPutawayTodos({ batchId: MOCK_IDS.batch3, page: 1, pageSize: 10 })
     expect(putawayBeforeResolve.items.some((item) => item.receiptLineId === MOCK_IDS.receiptLine5)).toBe(false)
+  })
+
+  it('quality-check 返回 200 + ApiResponse<Receipt>', async () => {
+    const body = { result: 'PASS' as const, checkedQty: '40.0000' }
+    const response = await postRaw(`/receipt-lines/${MOCK_IDS.receiptLine4}/quality-check`, body, 'contract-qc-response')
+    const data = await expectReceiptResponse(response, 200, MOCK_IDS.receipt4, 'PUTAWAY', 'CHECKED')
+    const typedReplay: Receipt = await apiSubmitQualityCheck(MOCK_IDS.receiptLine4, body, 'contract-qc-response')
+    expect(typedReplay).toEqual(data)
+  })
+
+  it('quality-check resolve 返回 200 + ApiResponse<Receipt>', async () => {
+    const body = { action: 'PASS' as const }
+    const response = await postRaw(`/quality-checks/${MOCK_IDS.quality1}/resolve`, body, 'contract-resolve-response')
+    const data = await expectReceiptResponse(response, 200, MOCK_IDS.receipt3, 'PUTAWAY', 'CHECKED')
+    const typedReplay: Receipt = await apiResolveQualityException(MOCK_IDS.quality1, body, 'contract-resolve-response')
+    expect(typedReplay).toEqual(data)
+  })
+
+  it('putaway-records 返回 201 + ApiResponse<Receipt>', async () => {
+    const body = {
+      receiptLineId: MOCK_IDS.receiptLine2,
+      toLocationId: MOCK_IDS.locationDefault1,
+      scannedLocationCode: 'DEF-01',
+      expectedInventoryVersion: 3,
+    }
+    const response = await postRaw('/putaway-records', body, 'contract-putaway-response')
+    const data = await expectReceiptResponse(response, 201, MOCK_IDS.receipt2, 'DONE', 'PUTAWAY_DONE')
+    const typedReplay: Receipt = await apiCreatePutawayRecord(body, 'contract-putaway-response')
+    expect(typedReplay).toEqual(data)
   })
 
   it('附件上传缺少幂等键时返回后端一致的 VALIDATION_ERROR，同 key 重放首次结果', async () => {

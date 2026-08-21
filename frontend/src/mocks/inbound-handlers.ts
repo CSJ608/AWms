@@ -773,7 +773,7 @@ export const inboundHandlers = [
     if (body.result === 'PASS') {
       found.line.status = 'CHECKED'
       updateReceiptStatus(found.receipt)
-      return rememberNoContent(request)
+      return remember(request, 200, structuredClone(found.receipt))
     }
     if (!body.exceptionReason || !body.photoIds || body.photoIds.length === 0 || body.photoIds.length > 3) {
       return fail('VALIDATION_ERROR', '异常必须选择原因并上传 1-3 张照片', 400)
@@ -809,7 +809,7 @@ export const inboundHandlers = [
         att.bizId = check.id
       }
     })
-    return rememberNoContent(request)
+    return remember(request, 200, structuredClone(found.receipt))
   }),
 
   http.post('/api/quality-checks/search', async ({ request }) => {
@@ -842,7 +842,8 @@ export const inboundHandlers = [
     const body = (await request.json()) as QualityResolveRequest
     if (body.action === 'REJECT' && !body.note?.trim()) return fail('VALIDATION_ERROR', '驳回必须填写备注', 400)
     const found = findReceiptLine(check.receiptLineId)
-    if (body.action === 'PASS' && found) {
+    if (!found) return fail('QUALITY_CHECK_NOT_FOUND', '质检异常不存在', 404)
+    if (body.action === 'PASS') {
       found.line.status = 'CHECKED'
       updateReceiptStatus(found.receipt)
     }
@@ -851,7 +852,7 @@ export const inboundHandlers = [
     check.resolvedBy = auth.userId
     check.resolvedByName = auth.userName
     check.resolvedAt = nowIso()
-    return remember(request, 200, check)
+    return remember(request, 200, structuredClone(found.receipt))
   }),
 
   http.post('/api/putaway-todos/search', async ({ request }) => {
@@ -901,7 +902,7 @@ export const inboundHandlers = [
     found.line.status = 'PUTAWAY_DONE'
     db.putawayVersions[body.receiptLineId] = version + 1
     updateReceiptStatus(found.receipt)
-    return rememberNoContent(request)
+    return remember(request, 201, structuredClone(found.receipt))
   }),
 
   http.post('/api/attachments', async ({ request }) => {
