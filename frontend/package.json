@@ -11,7 +11,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.browser.config.ts --browser",
+    "test:browser": "vitest run --config vitest.browser.config.ts --browser",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -48,6 +49,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
+    "@vitest/browser-playwright": "4.1.10",
     "jsdom": "^30.0.1",
     "msw": "^2.15.0",
     "oxlint": "^1.75.0",

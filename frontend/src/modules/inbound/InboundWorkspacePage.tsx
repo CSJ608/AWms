@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
-  apiCreateInboundOrder, apiGetInboundOrder, apiGetReceipt, apiListInboundOrders, apiListQualityExceptions,
+  apiCreateInboundOrder, apiDownloadPrintJobFile, apiGetInboundOrder, apiGetReceipt, apiListInboundOrders, apiListQualityExceptions,
   apiListReceipts, apiPrintBatchLabels, apiPrintExternalLabels, apiPrintInboundOrderQr, apiPrintReceipt,
   apiPrintUniqueLabels, apiResolveQualityException, apiRetryPrintJob, apiVoidInboundOrder,
 } from '@/api'
@@ -20,11 +20,13 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { PrintJobItems } from '@/components/PrintJobItems'
+import { ProtectedImagePreview } from '@/components/ProtectedMedia'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/platform/auth/auth-context'
+import { downloadBlob } from '@/platform/download'
 import { useStableIdempotencyKey } from '@/platform/idempotency'
 import { ReferencePicker } from '@/platform/picker/ReferencePicker'
 import {
@@ -827,9 +829,14 @@ function ReceiptDetail({ receipt, canPrint, onPreview }: { receipt: Receipt; can
         ) : (
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
             {receipt.photos.map((id) => (
-              <a key={id} href={`/api/attachments/${id}`} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-lg border bg-muted/30">
-                <img src={`/api/attachments/${id}/thumbnail`} alt={`收货附件 ${id}`} className="size-full object-cover" />
-              </a>
+              <div key={id} className="aspect-square overflow-hidden rounded-lg border bg-muted/30">
+                <ProtectedImagePreview
+                  thumbnailPath={`/api/attachments/${id}/thumbnail`}
+                  originalPath={`/api/attachments/${id}`}
+                  alt={`收货附件 ${id}`}
+                  className="size-full object-cover"
+                />
+              </div>
             ))}
           </div>
         )}
@@ -966,6 +973,13 @@ function PrintPreviewDialog({ job, onOpenChange }: { job: PrintJob | null; onOpe
     onSuccess: ({ next, fingerprint }) => { clearKey(fingerprint); setCurrentJob(next) },
     onError: (e) => toast.error((e as Error).message),
   })
+  const download = useMutation({
+    mutationFn: async () => {
+      const response = await apiDownloadPrintJobFile(currentJob!.id)
+      await downloadBlob(response, `${currentJob!.templateCode}.pdf`)
+    },
+    onError: (e) => toast.error((e as Error).message),
+  })
 
   useEffect(() => setCurrentJob(job), [job])
 
@@ -994,7 +1008,7 @@ function PrintPreviewDialog({ job, onOpenChange }: { job: PrintJob | null; onOpe
               重试
             </Button>
           )}
-          {currentJob?.fileUrl && <Button variant="outline" asChild><a href={currentJob.fileUrl}>下载 PDF</a></Button>}
+          {currentJob?.fileUrl && <Button variant="outline" disabled={download.isPending} onClick={() => download.mutate()}>下载 PDF</Button>}
           <Button onClick={() => onOpenChange(false)}>关闭</Button>
         </DialogFooter>
       </DialogContent>
@@ -1023,9 +1037,14 @@ function ExceptionDetailDialog({ item, onOpenChange }: { item: QualityExceptionI
               {item.photoIds.length === 0 ? <p>无</p> : (
                 <div className="grid grid-cols-3 gap-2">
                   {item.photoIds.map((id) => (
-                    <a key={id} href={`/api/attachments/${id}`} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded border">
-                      <img src={`/api/attachments/${id}/thumbnail`} alt={`异常附件 ${id}`} className="size-full object-cover" />
-                    </a>
+                    <div key={id} className="aspect-square overflow-hidden rounded border">
+                      <ProtectedImagePreview
+                        thumbnailPath={`/api/attachments/${id}/thumbnail`}
+                        originalPath={`/api/attachments/${id}`}
+                        alt={`异常附件 ${id}`}
+                        className="size-full object-cover"
+                      />
+                    </div>
                   ))}
                 </div>
               )}

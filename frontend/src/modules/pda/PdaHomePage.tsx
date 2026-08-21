@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertTriangle, ArrowLeft, Camera, CheckCircle2, ClipboardCheck, Plus, Printer, ScanLine, Trash2,
+  AlertTriangle, ArrowLeft, Camera, CheckCircle2, ClipboardCheck, Plus, Printer, RotateCw, ScanLine, Trash2,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
@@ -8,7 +8,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   apiCreatePutawayRecord, apiCreateReceipt, apiGetPutawayRecommendations, apiListLocations,
   apiListPutawayTodos, apiListQualityTodos, apiParseScan, apiPrintBatchLabels, apiPrintReceipt,
-  apiQuickSearchMaterials, apiQuickSearchWarehouses, apiSubmitQualityCheck, apiUploadAttachment,
+  apiQuickSearchMaterials, apiQuickSearchWarehouses, apiSubmitQualityCheck,
 } from '@/api'
 import { parseApiError } from '@/api/client'
 import type {
@@ -17,6 +17,7 @@ import type {
   ScanMaterial, ScanResult, SourceItem, WarehouseItem,
 } from '@/api/types'
 import { PrintJobItems } from '@/components/PrintJobItems'
+import { ProtectedImagePreview } from '@/components/ProtectedMedia'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -25,6 +26,7 @@ import { useAuth } from '@/platform/auth/auth-context'
 import { useStableIdempotencyKey } from '@/platform/idempotency'
 import { menuIcon } from '@/platform/menu-icons'
 import { ReferencePicker } from '@/platform/picker/ReferencePicker'
+import { useAttachmentUploads } from './useAttachmentUploads'
 
 const WAREHOUSE_STORAGE_KEY = 'awms:pda:warehouse-id'
 const actionByEntry: Record<string, string> = {
@@ -206,7 +208,8 @@ function ReceivingPage({ warehouse }: { warehouse: WarehouseContext }) {
   const [lines, setLines] = useState<ReceivingLineDraft[]>([])
   const [activeKey, setActiveKey] = useState('')
   const [reviewing, setReviewing] = useState(false)
-  const [photos, setPhotos] = useState<AttachmentItem[]>([])
+  const photoUploads = useAttachmentUploads('RECEIPT')
+  const photos = photoUploads.uploaded
   const [error, setError] = useState('')
   const [result, setResult] = useState<Receipt | null>(null)
   const [printJob, setPrintJob] = useState<PrintJob | null>(null)
@@ -240,11 +243,6 @@ function ReceivingPage({ warehouse }: { warehouse: WarehouseContext }) {
       setResult(receipt)
       setError('')
     },
-    onError: (reason) => setError(parseApiError(reason).message),
-  })
-  const photoMutation = useMutation({
-    mutationFn: (file: File) => apiUploadAttachment(file, 'RECEIPT'),
-    onSuccess: (attachment) => setPhotos((current) => [...current, attachment].slice(0, 3)),
     onError: (reason) => setError(parseApiError(reason).message),
   })
   const printMutation = useMutation({
@@ -313,7 +311,7 @@ function ReceivingPage({ warehouse }: { warehouse: WarehouseContext }) {
     setLines([])
     setActiveKey('')
     setReviewing(false)
-    setPhotos([])
+    photoUploads.clear()
     setResult(null)
     setPrintJob(null)
     setError('')
@@ -363,11 +361,11 @@ function ReceivingPage({ warehouse }: { warehouse: WarehouseContext }) {
             </div>
           ))}
         </div>
-        <AttachmentUpload photos={photos} pending={photoMutation.isPending} onUpload={(file) => photoMutation.mutate(file)} />
+        <AttachmentUpload uploads={photoUploads} />
         {error && <PdaError message={error} />}
         <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" onClick={() => setReviewing(false)}>继续添加</Button>
-          <Button disabled={receiptMutation.isPending || photoMutation.isPending} onClick={() => receiptMutation.mutate()} data-testid="submit-receipt">确认提交</Button>
+          <Button disabled={receiptMutation.isPending || photoUploads.busy || photoUploads.hasFailures} onClick={() => receiptMutation.mutate()} data-testid="submit-receipt">确认提交</Button>
         </div>
       </div>
     )
@@ -535,7 +533,8 @@ function QualityPage({ warehouse }: { warehouse: WarehouseContext }) {
   const [exceptionMode, setExceptionMode] = useState(false)
   const [reason, setReason] = useState<QualityExceptionReason>('DAMAGED')
   const [note, setNote] = useState('')
-  const [photos, setPhotos] = useState<AttachmentItem[]>([])
+  const photoUploads = useAttachmentUploads('EXCEPTION')
+  const photos = photoUploads.uploaded
   const [done, setDone] = useState('')
   const { getKey, clearKey } = useStableIdempotencyKey()
   const queryKey = ['pda-quality-todos', warehouse.id]
@@ -554,7 +553,7 @@ function QualityPage({ warehouse }: { warehouse: WarehouseContext }) {
       setDone(exceptionMode ? '异常已上报' : '质检通过')
       setSelected(null)
       setExceptionMode(false)
-      setPhotos([])
+      photoUploads.clear()
       void queryClient.invalidateQueries({ queryKey })
     },
     onError: (reason) => {
@@ -566,12 +565,6 @@ function QualityPage({ warehouse }: { warehouse: WarehouseContext }) {
       }
     },
   })
-  const upload = useMutation({
-    mutationFn: (file: File) => apiUploadAttachment(file, 'EXCEPTION'),
-    onSuccess: (attachment) => setPhotos((current) => [...current, attachment].slice(0, 3)),
-    onError: (reason) => setError(parseApiError(reason).message),
-  })
-
   const locate = async (content: string) => {
     setError('')
     setDone('')
@@ -604,8 +597,8 @@ function QualityPage({ warehouse }: { warehouse: WarehouseContext }) {
               <option value="DAMAGED">破损</option><option value="QTY_MISMATCH">数量不符</option><option value="OTHER">其他</option>
             </select>
             <Input className="h-11" value={note} onChange={(event) => setNote(event.target.value)} placeholder="备注" />
-            <AttachmentUpload photos={photos} pending={upload.isPending} onUpload={(file) => upload.mutate(file)} />
-            <Button className="h-12 w-full text-base" disabled={photos.length === 0 || submit.isPending || upload.isPending} onClick={() => submit.mutate()} data-testid="quality-exception-submit">提交异常</Button>
+            <AttachmentUpload uploads={photoUploads} />
+            <Button className="h-12 w-full text-base" disabled={photos.length === 0 || submit.isPending || photoUploads.busy || photoUploads.hasFailures} onClick={() => submit.mutate()} data-testid="quality-exception-submit">提交异常</Button>
           </div>
         )}
         {error && <PdaError message={error} />}
@@ -773,19 +766,61 @@ function PutawayPage({ warehouse }: { warehouse: WarehouseContext }) {
   )
 }
 
-function AttachmentUpload({ photos, pending, onUpload }: { photos: AttachmentItem[]; pending: boolean; onUpload: (file: File) => void }) {
+function AttachmentUpload({ uploads }: { uploads: ReturnType<typeof useAttachmentUploads> }) {
   return (
     <div className="space-y-2 rounded-lg border bg-card p-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">照片 {photos.length}/3</span>
+        <span className="text-sm font-medium">照片 {uploads.entries.length}/{uploads.maxCount}</span>
         <label className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg border px-3 text-sm">
           <Camera className="size-4" data-icon />拍照
-          <input type="file" accept="image/*" className="sr-only" disabled={photos.length >= 3 || pending} onChange={(event) => { const file = event.target.files?.[0]; if (file) onUpload(file) }} />
+          <input
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            disabled={uploads.entries.length >= uploads.maxCount}
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0]
+              event.currentTarget.value = ''
+              if (file) uploads.add(file)
+            }}
+          />
         </label>
       </div>
-      {photos.length > 0 && (
+      {uploads.entries.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
-          {photos.map((photo) => <img key={photo.id} src={photo.thumbnailUrl} alt={photo.fileName} className="aspect-square w-full rounded border object-cover" />)}
+          {uploads.entries.map((entry) => (
+            <div key={entry.id} className="relative min-w-0 overflow-hidden rounded border bg-muted/30" data-testid={`attachment-${entry.status}`}>
+              {entry.attachment ? (
+                <ProtectedImagePreview
+                  thumbnailPath={entry.attachment.thumbnailUrl}
+                  originalPath={entry.attachment.url}
+                  alt={entry.file.name}
+                  className="aspect-square size-full object-cover"
+                />
+              ) : (
+                <div className="grid aspect-square place-items-center p-2 text-center text-xs">
+                  <span className="break-all">{entry.file.name}</span>
+                  <span className={entry.status === 'upload-failed' ? 'text-destructive' : 'text-muted-foreground'}>
+                    {entry.status === 'upload-failed' ? entry.error : '上传中'}
+                  </span>
+                </div>
+              )}
+              <div className="absolute right-1 bottom-1 flex gap-1">
+                {entry.status === 'upload-failed' && (
+                  <Button type="button" size="icon-xs" variant="secondary" aria-label={`重传 ${entry.file.name}`} onClick={() => uploads.retry(entry.id)}>
+                    <RotateCw className="size-3" data-icon />
+                  </Button>
+                )}
+                {entry.status !== 'uploading' && entry.status !== 'deleting' && (
+                  <Button type="button" size="icon-xs" variant="secondary" aria-label={`删除 ${entry.file.name}`} onClick={() => void uploads.remove(entry.id)}>
+                    <Trash2 className="size-3" data-icon />
+                  </Button>
+                )}
+              </div>
+              {entry.status === 'deleting' && <p className="absolute inset-x-0 bottom-0 bg-background/90 p-1 text-center text-xs">删除中</p>}
+              {entry.status === 'delete-failed' && <p className="absolute inset-x-0 top-0 bg-destructive/90 p-1 text-xs text-destructive-foreground">{entry.error}</p>}
+            </div>
+          ))}
         </div>
       )}
     </div>

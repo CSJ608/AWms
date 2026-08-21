@@ -117,12 +117,16 @@ export const apiCreatePutawayRecord = (body: PutawayRecordCreateRequest, idempot
 // ── 扫码 / 附件 / 打印 ────────────────────────────────
 export const apiParseScan = (body: ScanParseRequest) =>
   request<ScanResult>('/scan/parse', { method: 'POST', body })
-export const apiUploadAttachment = (file: File, bizType?: string) => {
+export const apiUploadAttachment = (file: File, bizType: string | undefined, idempotencyKey: string) => {
   const fd = new FormData()
   fd.append('file', file)
   if (bizType) fd.append('bizType', bizType)
-  return request<AttachmentItem>('/attachments', { method: 'POST', formData: fd })
+  return request<AttachmentItem>('/attachments', { method: 'POST', formData: fd, idempotencyKey })
 }
+export const apiDeleteAttachment = (id: string, idempotencyKey: string) =>
+  request<void>(`/attachments/${id}`, { method: 'DELETE', idempotencyKey })
+export const apiFetchProtectedFile = (path: string) =>
+  request<Response>(path, { blob: true })
 export const apiListAttachments = (query: {
   bizType?: string
   bizId?: string

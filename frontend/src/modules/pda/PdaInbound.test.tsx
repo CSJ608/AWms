@@ -1,12 +1,12 @@
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderApp, seedSession, makeOperatorSession, makeSupervisorSession } from '@/test/utils'
 import { server } from '@/mocks/server'
 import { MOCK_IDS } from '@/mocks/seed'
 import { db } from '@/mocks/db'
-import { seedReceipts } from '@/mocks/seed'
+import { seedAttachments, seedReceipts } from '@/mocks/seed'
 
 const label = (payload: Record<string, unknown>) => `AWMS1:${JSON.stringify(payload)}`
 
@@ -89,7 +89,47 @@ describe('PDA 菜单与入库作业', () => {
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
     fireEvent.change(fileInput, { target: { files: [new File(['bad'], 'bad.txt', { type: 'text/plain' })] } })
     expect(await screen.findByText('附件类型不支持')).toBeInTheDocument()
+    expect(screen.getByTestId('attachment-upload-failed')).toBeInTheDocument()
+    expect(screen.getByTestId('submit-receipt')).toBeDisabled()
     expect(screen.getByText(/PO-20260819-0001/)).toBeInTheDocument()
+  })
+
+  it('附件失败重传复用稳定 key，可删除并重新选择同一文件', async () => {
+    seedSession(makeOperatorSession())
+    const keys: string[] = []
+    let uploads = 0
+    server.use(
+      http.post('/api/attachments', async ({ request }) => {
+        uploads += 1
+        keys.push(request.headers.get('Idempotency-Key') ?? '')
+        if (uploads === 1) return HttpResponse.json({ code: 'INTERNAL_ERROR', message: '上传暂时失败', data: null }, { status: 500 })
+        return HttpResponse.json({ code: 'OK', message: 'ok', data: { ...seedAttachments[0], bizType: null, bizId: null, fileName: 'receipt.jpg' } }, { status: 201 })
+      }),
+      http.delete(`/api/attachments/${MOCK_IDS.attachment1}`, () => new HttpResponse(null, { status: 204 })),
+    )
+    renderApp('/pda/receiving')
+    const user = userEvent.setup()
+
+    await scan(user, label({ v: 1, t: 'D', ty: 'PO', d: 'PO-20260819-0001', wh: 'WH-01' }))
+    await screen.findByText(/PO-20260819-0001/)
+    await user.selectOptions(screen.getByLabelText('单据行'), MOCK_IDS.inboundOrderLine1)
+    await scan(user, label({ v: 1, t: 'S', s: 'MAT-001', q: '200.0000', rb: 'REAL-BATCH-01', pd: '2026-08-20' }))
+    await user.click(screen.getByTestId('review-receipt'))
+
+    const file = new File(['photo'], 'receipt.jpg', { type: 'image/jpeg' })
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(fileInput, { target: { files: [file] } })
+    await screen.findByText('上传暂时失败')
+    await user.click(screen.getByRole('button', { name: '重传 receipt.jpg' }))
+    await screen.findByRole('img', { name: 'receipt.jpg' })
+    expect(keys[0]).toBe(keys[1])
+
+    await user.click(screen.getByRole('button', { name: '删除 receipt.jpg' }))
+    await waitFor(() => expect(screen.queryByRole('img', { name: 'receipt.jpg' })).not.toBeInTheDocument())
+    fireEvent.change(fileInput, { target: { files: [file] } })
+    await screen.findByRole('img', { name: 'receipt.jpg' })
+    expect(uploads).toBe(3)
+    expect(keys[2]).not.toBe(keys[1])
   })
 
   it('质检扫批次标签按多条选择、1 条直达、0 条提示处理', async () => {

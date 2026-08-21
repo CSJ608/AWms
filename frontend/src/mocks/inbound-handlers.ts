@@ -30,7 +30,6 @@ export function resetInboundMockState(): void {
 const mockDelay = () => delay(import.meta.env.MODE === 'test' ? 0 : 80)
 
 const ok = (data: unknown) => HttpResponse.json({ code: 'OK', message: 'ok', data })
-const created = (data: unknown) => HttpResponse.json({ code: 'OK', message: 'ok', data }, { status: 201 })
 const noContent = () => new HttpResponse(null, { status: 204 })
 const fail = (code: string, message: string, status: number) =>
   HttpResponse.json({ code, message, data: null }, { status })
@@ -73,6 +72,12 @@ async function parseSearchBody(req: Request, fuzzyFields: string[], defaultSort?
 function idempotencyKey(req: Request): string | null {
   const key = req.headers.get('Idempotency-Key')
   return key ? `${req.method}:${new URL(req.url).pathname}:${key}` : null
+}
+
+function requireIdempotencyKey(req: Request): Response | null {
+  return req.headers.get('Idempotency-Key')
+    ? null
+    : fail('VALIDATION_ERROR', 'Idempotency-Key 必填', 400)
 }
 
 function replay(req: Request): Response | null {
@@ -351,19 +356,21 @@ function printJob(
 }
 
 function externalScan(content: string): ScanResult | null {
-  const materialCode = /^MAT-\d{3}$/.test(content) ? content : null
-  const ean = /^\d{13}$/.test(content) ? content : null
+  const code128Content = content.startsWith(']C0') || content.startsWith(']C1') ? content.slice(3) : content
+  const materialCode = /^MAT-\d{3}$/.test(code128Content) ? code128Content : null
+  const ean = isValidEan13(content) ? content : null
   const gs1 = Object.fromEntries([...content.matchAll(/\((01|10|11|15|30)\)([^()]+)/g)].map((match) => [match[1], match[2]]))
-  const isGs1 = Object.keys(gs1).length > 0
+  const isGs1 = Object.keys(gs1).length > 0 && (!gs1['01'] || /^\d{14}$/.test(gs1['01']))
   const material = materialCode
     ? materialByCode(materialCode)
     : ean === '6901234567892' || gs1['01'] === '06901234567892'
       ? materialByCode('MAT-001')
       : null
-  if (!material) return null
+  const isCode128 = !!materialCode || content.startsWith(']C0')
+  if (!isGs1 && !ean && !isCode128) return null
   const result = emptyScan('EXTERNAL_BARCODE', null)
-  result.material = scanMaterial(material.id)
-  result.quantity = isGs1 && gs1['30'] ? dec(Number(gs1['30'])) : material.defaultQtyPerLabel
+  result.material = material ? scanMaterial(material.id) : null
+  result.quantity = isGs1 && gs1['30'] ? dec(Number(gs1['30'])) : null
   result.batchProps = isGs1 ? {
     sourceBatchNo: gs1['10'] ?? null,
     productionDate: gs1Date(gs1['11']),
@@ -373,10 +380,22 @@ function externalScan(content: string): ScanResult | null {
   } : null
   result.external = {
     code: content,
-    format: isGs1 ? 'GS1' : ean ? 'EAN_13' : 'CODE_128',
-    parsed: isGs1 ? gs1 : ean ? { gtin: ean } : { materialCode: material.code },
+    format: isGs1 ? 'GS1' : ean ? 'EAN13' : 'CODE128',
+    parsed: isGs1 ? {
+      ...(gs1['01'] ? { gtin: gs1['01'] } : {}),
+      ...(gs1['10'] ? { batchNo: gs1['10'] } : {}),
+      ...(gs1Date(gs1['11']) ? { productionDate: gs1Date(gs1['11'])! } : {}),
+      ...(gs1Date(gs1['15']) ? { expiryDate: gs1Date(gs1['15'])! } : {}),
+      ...(gs1['30'] ? { quantity: dec(Number(gs1['30'])) } : {}),
+    } : ean ? { gtin: ean } : { code: code128Content },
   }
   return result
+}
+
+function isValidEan13(value: string): boolean {
+  if (!/^\d{13}$/.test(value)) return false
+  const sum = [...value.slice(0, 12)].reduce((total, digit, index) => total + Number(digit) * (index % 2 === 0 ? 1 : 3), 0)
+  return (10 - sum % 10) % 10 === Number(value[12])
 }
 
 function gs1Date(value?: string): string | null {
@@ -809,7 +828,7 @@ export const inboundHandlers = [
     if (!check) return fail('QUALITY_CHECK_NOT_FOUND', '质检异常不存在', 404)
     if (check.resolutionAction) return fail('QUALITY_CHECK_ALREADY_RESOLVED', '该异常已处理', 409)
     const body = (await request.json()) as QualityResolveRequest
-    if (body.action === 'REJECT' && !body.note?.trim()) return fail('QC_STATUS_INVALID', '驳回必须填写备注', 400)
+    if (body.action === 'REJECT' && !body.note?.trim()) return fail('VALIDATION_ERROR', '驳回必须填写备注', 400)
     const found = findReceiptLine(check.receiptLineId)
     if (body.action === 'PASS' && found) {
       found.line.status = 'CHECKED'
@@ -864,7 +883,7 @@ export const inboundHandlers = [
     }
     const version = db.putawayVersions[body.receiptLineId] ?? 1
     if (body.expectedInventoryVersion !== version) return fail('VERSION_CONFLICT', '库存版本已变化，请刷新后重试', 409)
-    if (found.line.status !== 'CHECKED') return fail('RECEIPT_STATUS_INVALID', '当前行不可上架', 409)
+    if (found.line.status !== 'CHECKED') return fail('VERSION_CONFLICT', '库存版本已变化，请刷新后重试', 409)
     found.line.status = 'PUTAWAY_DONE'
     db.putawayVersions[body.receiptLineId] = version + 1
     updateReceiptStatus(found.receipt)
@@ -875,6 +894,10 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
+    const hit = replay(request)
+    if (hit) return hit
     const fd = await request.formData()
     const file = fd.get('file') as File | null
     if (!file) return fail('VALIDATION_ERROR', '缺少附件文件', 400)
@@ -900,7 +923,7 @@ export const inboundHandlers = [
     item.url = `/api/attachments/${item.id}`
     item.thumbnailUrl = `/api/attachments/${item.id}/thumbnail`
     db.attachments.unshift(item)
-    return created(item)
+    return remember(request, 201, item)
   }),
 
   http.get('/api/attachments', async ({ request }) => {
@@ -938,11 +961,15 @@ export const inboundHandlers = [
     await mockDelay()
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
+    const keyError = requireIdempotencyKey(request)
+    if (keyError) return keyError
+    const hit = replay(request)
+    if (hit) return hit
     const att = getById(db.attachments, String(params.id))
     if (!att) return fail('ATTACHMENT_NOT_FOUND', '附件不存在', 404)
     if (att.bizId) return fail('ATTACHMENT_IN_USE', '附件已关联业务，禁止删除', 409)
     db.attachments = db.attachments.filter((a) => a.id !== att.id)
-    return noContent()
+    return rememberNoContent(request)
   }),
 
   http.post('/api/print/inbound-order-qr', async ({ request }) => {

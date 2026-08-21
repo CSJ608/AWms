@@ -2,9 +2,12 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   apiCreatePutawayRecord, apiCreateReceipt, apiGetInboundOrder, apiListPutawayTodos, apiListQualityExceptions,
   apiListQualityTodos, apiParseScan, apiPrintBatchLabels, apiPrintUniqueLabels, apiRetryPrintJob, apiSubmitQualityCheck,
-  apiUploadAttachment,
+  apiResolveQualityException, apiUploadAttachment,
 } from '@/api'
+import { request } from '@/api/client'
+import type { AttachmentItem } from '@/api/types'
 import { seedSession } from '@/test/utils'
+import { db } from './db'
 import { MOCK_IDS, seedAttachments, seedBatches, seedInboundOrders, seedLocations, seedMaterials, seedPermissions, seedQualityChecks, seedReceipts, seedSources, seedUsers, seedWarehouses } from './seed'
 
 describe('MSW 入库链契约边界', () => {
@@ -56,10 +59,10 @@ describe('MSW 入库链契约边界', () => {
   })
 
   it('附件失败、异常处理和 REJECT 后不上架', async () => {
-    await expect(apiUploadAttachment(new File(['bad'], 'bad.txt', { type: 'text/plain' })))
+    await expect(apiUploadAttachment(new File(['bad'], 'bad.txt', { type: 'text/plain' }), undefined, 'attachment-bad'))
       .rejects.toMatchObject({ code: 'ATTACHMENT_TYPE_INVALID' })
 
-    const photo = await apiUploadAttachment(new File(['ok'], 'exception.jpg', { type: 'image/jpeg' }), 'EXCEPTION')
+    const photo = await apiUploadAttachment(new File(['ok'], 'exception.jpg', { type: 'image/jpeg' }), 'EXCEPTION', 'attachment-exception')
     await apiSubmitQualityCheck(MOCK_IDS.receiptLine5, {
       result: 'EXCEPTION',
       checkedQty: '12.0000',
@@ -73,6 +76,17 @@ describe('MSW 入库链契约边界', () => {
 
     const putawayBeforeResolve = await apiListPutawayTodos({ batchId: MOCK_IDS.batch3, page: 1, pageSize: 10 })
     expect(putawayBeforeResolve.items.some((item) => item.receiptLineId === MOCK_IDS.receiptLine5)).toBe(false)
+  })
+
+  it('附件上传缺少幂等键时返回后端一致的 VALIDATION_ERROR，同 key 重放首次结果', async () => {
+    const formData = new FormData()
+    formData.append('file', new File(['ok'], 'receipt.jpg', { type: 'image/jpeg' }))
+    await expect(request<AttachmentItem>('/attachments', { method: 'POST', formData }))
+      .rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400, message: 'Idempotency-Key 必填' })
+
+    const first = await apiUploadAttachment(new File(['first'], 'receipt.jpg', { type: 'image/jpeg' }), 'RECEIPT', 'attachment-replay')
+    const replayed = await apiUploadAttachment(new File(['second'], 'other.jpg', { type: 'image/jpeg' }), 'RECEIPT', 'attachment-replay')
+    expect(replayed).toEqual(first)
   })
 
   it('非法库位和 VERSION_CONFLICT 均按契约返回', async () => {
@@ -89,6 +103,20 @@ describe('MSW 入库链契约边界', () => {
       scannedLocationCode: 'DEF-01',
       expectedInventoryVersion: 2,
     }, 'putaway-version-conflict')).rejects.toMatchObject({ code: 'VERSION_CONFLICT' })
+
+    const line = db.receipts.flatMap((receipt) => receipt.lines).find((item) => item.id === MOCK_IDS.receiptLine2)!
+    line.status = 'PUTAWAY_DONE'
+    await expect(apiCreatePutawayRecord({
+      receiptLineId: MOCK_IDS.receiptLine2,
+      toLocationId: MOCK_IDS.locationDefault1,
+      scannedLocationCode: 'DEF-01',
+      expectedInventoryVersion: 3,
+    }, 'putaway-state-conflict')).rejects.toMatchObject({ code: 'VERSION_CONFLICT' })
+  })
+
+  it('REJECT 缺少备注返回锁定通用校验错误', async () => {
+    await expect(apiResolveQualityException(MOCK_IDS.quality1, { action: 'REJECT' }, 'resolve-without-note'))
+      .rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 })
   })
 
   it('打印失败作业可重试；生成类端点同一幂等键不重复登记唯一码', async () => {
@@ -128,13 +156,18 @@ describe('MSW 入库链契约边界', () => {
 
   it('EAN-13、Code128 和 GS1 返回 EXTERNAL_BARCODE 结构化结果', async () => {
     const ean = await apiParseScan({ content: '6901234567892' })
-    expect(ean).toMatchObject({ type: 'EXTERNAL_BARCODE', external: { format: 'EAN_13' }, material: { materialCode: 'MAT-001' } })
+    expect(ean).toMatchObject({ type: 'EXTERNAL_BARCODE', quantity: null, external: { format: 'EAN13', parsed: { gtin: '6901234567892' } }, material: { materialCode: 'MAT-001' } })
     const code128 = await apiParseScan({ content: 'MAT-001' })
-    expect(code128).toMatchObject({ type: 'EXTERNAL_BARCODE', external: { format: 'CODE_128' } })
+    expect(code128).toMatchObject({ type: 'EXTERNAL_BARCODE', quantity: null, external: { format: 'CODE128', parsed: { code: 'MAT-001' } } })
+    const unknownCode128 = await apiParseScan({ content: ']C0UNKNOWN-SKU' })
+    expect(unknownCode128).toMatchObject({ type: 'EXTERNAL_BARCODE', material: null, external: { format: 'CODE128', parsed: { code: 'UNKNOWN-SKU' } } })
+    const unknownEan = await apiParseScan({ content: '4006381333931' })
+    expect(unknownEan).toMatchObject({ type: 'EXTERNAL_BARCODE', material: null, external: { format: 'EAN13', parsed: { gtin: '4006381333931' } } })
     const gs1 = await apiParseScan({ content: '(01)06901234567892(10)SUP-BATCH-01(11)260801(15)270801(30)10' })
     expect(gs1).toMatchObject({
       type: 'EXTERNAL_BARCODE', quantity: '10.0000',
       batchProps: { sourceBatchNo: 'SUP-BATCH-01', productionDate: '2026-08-01', expiryDate: '2027-08-01' },
+      external: { format: 'GS1', parsed: { gtin: '06901234567892', batchNo: 'SUP-BATCH-01', productionDate: '2026-08-01', expiryDate: '2027-08-01', quantity: '10.0000' } },
     })
   })
 })
