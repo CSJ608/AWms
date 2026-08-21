@@ -11,7 +11,6 @@ export function qtyText(value: string | null | undefined): string {
   if (!Number.isFinite(n)) return value
   return n.toLocaleString('zh-CN', { maximumFractionDigits: 4 })
 }
-
 export function sourceTypeText(value: SourceType | null | undefined): string {
   if (value === 'SUPPLIER') return '供应商'
   if (value === 'WORKSHOP') return '车间'
@@ -61,4 +60,3 @@ function statusLabel(status: InboundOrderStatus | ReceiptStatus | ReceiptLineSta
     case 'FAILED': return '生成失败'
   }
 }
-

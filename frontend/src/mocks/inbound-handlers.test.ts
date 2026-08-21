@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   apiCreatePutawayRecord, apiCreateReceipt, apiGetInboundOrder, apiListPutawayTodos, apiListQualityExceptions,
-  apiListQualityTodos, apiPrintBatchLabels, apiPrintUniqueLabels, apiRetryPrintJob, apiSubmitQualityCheck,
+  apiListQualityTodos, apiParseScan, apiPrintBatchLabels, apiPrintUniqueLabels, apiRetryPrintJob, apiSubmitQualityCheck,
   apiUploadAttachment,
 } from '@/api'
 import { seedSession } from '@/test/utils'
+import { MOCK_IDS, seedAttachments, seedBatches, seedInboundOrders, seedLocations, seedMaterials, seedPermissions, seedQualityChecks, seedReceipts, seedSources, seedUsers, seedWarehouses } from './seed'
 
 describe('MSW 入库链契约边界', () => {
   beforeEach(() => {
@@ -13,12 +14,12 @@ describe('MSW 入库链契约边界', () => {
 
   it('PO 严格数量不一致时拦截且不产生收货', async () => {
     await expect(apiCreateReceipt({
-      warehouseId: 'wh-01',
-      stagingLocationId: 'loc-01',
-      inboundOrderId: 'io-001',
+      warehouseId: MOCK_IDS.warehouse1,
+      stagingLocationId: MOCK_IDS.locationStaging1,
+      inboundOrderId: MOCK_IDS.inboundOrder1,
       lines: [{
-        orderLineId: 'iol-001',
-        materialId: 'mat-001',
+        orderLineId: MOCK_IDS.inboundOrderLine1,
+        materialId: MOCK_IDS.material1,
         batchProps: { sourceBatchNo: 'PRD-STRICT-FAIL', productionDate: '2026-08-21' },
         quantity: '199.0000',
       }],
@@ -27,12 +28,12 @@ describe('MSW 入库链契约边界', () => {
 
   it('唯一码按登记 quantity 守恒，重复唯一码二次提交被拦截', async () => {
     const receipt = await apiCreateReceipt({
-      warehouseId: 'wh-01',
-      stagingLocationId: 'loc-01',
-      inboundOrderId: 'io-001',
+      warehouseId: MOCK_IDS.warehouse1,
+      stagingLocationId: MOCK_IDS.locationStaging1,
+      inboundOrderId: MOCK_IDS.inboundOrder1,
       lines: [{
-        orderLineId: 'iol-002',
-        materialId: 'mat-004',
+        orderLineId: MOCK_IDS.inboundOrderLine2,
+        materialId: MOCK_IDS.material4,
         batchProps: { sourceBatchNo: 'UNIQUE-OK', productionDate: '2026-08-21' },
         quantity: '10.0000',
         uniqueCodes: ['BOX-20260820-0001', 'BOX-20260820-0002'],
@@ -41,12 +42,12 @@ describe('MSW 入库链契约边界', () => {
     expect(receipt.lines[0].actualQty).toBe('10.0000')
 
     await expect(apiCreateReceipt({
-      warehouseId: 'wh-01',
-      stagingLocationId: 'loc-01',
-      inboundOrderId: 'io-001',
+      warehouseId: MOCK_IDS.warehouse1,
+      stagingLocationId: MOCK_IDS.locationStaging1,
+      inboundOrderId: MOCK_IDS.inboundOrder1,
       lines: [{
-        orderLineId: 'iol-002',
-        materialId: 'mat-004',
+        orderLineId: MOCK_IDS.inboundOrderLine2,
+        materialId: MOCK_IDS.material4,
         batchProps: { sourceBatchNo: 'UNIQUE-DUP', productionDate: '2026-08-21' },
         quantity: '10.0000',
         uniqueCodes: ['BOX-20260820-0001', 'BOX-20260820-0002'],
@@ -59,7 +60,7 @@ describe('MSW 入库链契约边界', () => {
       .rejects.toMatchObject({ code: 'ATTACHMENT_TYPE_INVALID' })
 
     const photo = await apiUploadAttachment(new File(['ok'], 'exception.jpg', { type: 'image/jpeg' }), 'EXCEPTION')
-    await apiSubmitQualityCheck('rl-005', {
+    await apiSubmitQualityCheck(MOCK_IDS.receiptLine5, {
       result: 'EXCEPTION',
       checkedQty: '12.0000',
       exceptionReason: 'DAMAGED',
@@ -70,45 +71,70 @@ describe('MSW 入库链契约边界', () => {
     const exceptions = await apiListQualityExceptions({ resolutionStatus: 'PENDING', keyword: 'RCP-20260819-0005', page: 1, pageSize: 10 })
     expect(exceptions.items).toHaveLength(1)
 
-    const putawayBeforeResolve = await apiListPutawayTodos({ batchId: 'b-03', page: 1, pageSize: 10 })
-    expect(putawayBeforeResolve.items.some((item) => item.receiptLineId === 'rl-005')).toBe(false)
+    const putawayBeforeResolve = await apiListPutawayTodos({ batchId: MOCK_IDS.batch3, page: 1, pageSize: 10 })
+    expect(putawayBeforeResolve.items.some((item) => item.receiptLineId === MOCK_IDS.receiptLine5)).toBe(false)
   })
 
   it('非法库位和 VERSION_CONFLICT 均按契约返回', async () => {
     await expect(apiCreatePutawayRecord({
-      receiptLineId: 'rl-002',
-      toLocationId: 'loc-02',
+      receiptLineId: MOCK_IDS.receiptLine2,
+      toLocationId: MOCK_IDS.locationDefault1,
       scannedLocationCode: 'STG-01',
       expectedInventoryVersion: 3,
     }, 'putaway-invalid-location')).rejects.toMatchObject({ code: 'PUTAWAY_LOCATION_INVALID' })
 
     await expect(apiCreatePutawayRecord({
-      receiptLineId: 'rl-002',
-      toLocationId: 'loc-02',
+      receiptLineId: MOCK_IDS.receiptLine2,
+      toLocationId: MOCK_IDS.locationDefault1,
       scannedLocationCode: 'DEF-01',
       expectedInventoryVersion: 2,
     }, 'putaway-version-conflict')).rejects.toMatchObject({ code: 'VERSION_CONFLICT' })
   })
 
   it('打印失败作业可重试；生成类端点同一幂等键不重复登记唯一码', async () => {
-    const failed = await apiPrintBatchLabels({ receiptLineId: 'rl-002', qtyPerLabel: '13.0000' }, 'print-fail')
+    const failed = await apiPrintBatchLabels({ receiptLineId: MOCK_IDS.receiptLine2, qtyPerLabel: '13.0000' }, 'print-fail')
     expect(failed.status).toBe('FAILED')
     expect(failed.errorCode).toBe('PRINT_GENERATION_FAILED')
     const retried = await apiRetryPrintJob(failed.id, 'print-retry')
     expect(retried.status).toBe('READY')
 
-    const first = await apiPrintUniqueLabels({ inboundOrderLineId: 'iol-001', count: 1, qtyPerCode: '1.0000' }, 'idem-unique')
-    const second = await apiPrintUniqueLabels({ inboundOrderLineId: 'iol-001', count: 1, qtyPerCode: '1.0000' }, 'idem-unique')
+    const first = await apiPrintUniqueLabels({ inboundOrderLineId: MOCK_IDS.inboundOrderLine1, count: 1, qtyPerCode: '1.0000' }, 'idem-unique')
+    const second = await apiPrintUniqueLabels({ inboundOrderLineId: MOCK_IDS.inboundOrderLine1, count: 1, qtyPerCode: '1.0000' }, 'idem-unique')
     expect(second.id).toBe(first.id)
-    const order = await apiGetInboundOrder('io-001')
-    expect(order.lines.find((line) => line.id === 'iol-001')?.uniqueCodes).toHaveLength(1)
+    const order = await apiGetInboundOrder(MOCK_IDS.inboundOrder1)
+    expect(order.lines.find((line) => line.id === MOCK_IDS.inboundOrderLine1)?.uniqueCodes).toHaveLength(1)
   })
 
   it('同一质检幂等键重放只处理一次', async () => {
-    await apiSubmitQualityCheck('rl-005', { result: 'PASS', checkedQty: '12.0000' }, 'qc-idem')
-    await apiSubmitQualityCheck('rl-005', { result: 'PASS', checkedQty: '12.0000' }, 'qc-idem')
-    const todos = await apiListQualityTodos({ receiptLineId: 'rl-005', page: 1, pageSize: 10 })
-    expect(todos.items.some((item) => item.receiptLineId === 'rl-005')).toBe(false)
+    await apiSubmitQualityCheck(MOCK_IDS.receiptLine5, { result: 'PASS', checkedQty: '12.0000' }, 'qc-idem')
+    await apiSubmitQualityCheck(MOCK_IDS.receiptLine5, { result: 'PASS', checkedQty: '12.0000' }, 'qc-idem')
+    const todos = await apiListQualityTodos({ receiptLineId: MOCK_IDS.receiptLine5, page: 1, pageSize: 10 })
+    expect(todos.items.some((item) => item.receiptLineId === MOCK_IDS.receiptLine5)).toBe(false)
+  })
+
+  it('所有 Mock DTO 主键均为合法 UUID', () => {
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/i
+    const ids = [
+      ...seedPermissions.map((item) => item.id), ...seedUsers.flatMap((item) => [item.id, ...item.roles.map((role) => role.id)]),
+      ...seedMaterials.map((item) => item.id), ...seedWarehouses.map((item) => item.id), ...seedLocations.flatMap((item) => [item.id, item.warehouseId]),
+      ...seedSources.map((item) => item.id), ...seedBatches.flatMap((item) => [item.id, item.materialId]),
+      ...seedInboundOrders.flatMap((item) => [item.id, item.warehouseId, ...item.lines.flatMap((line) => [line.id, line.materialId])]),
+      ...seedReceipts.flatMap((item) => [item.id, item.warehouseId, item.stagingLocationId, item.operatorId, ...item.lines.flatMap((line) => [line.id, line.materialId, line.batchId])]),
+      ...seedQualityChecks.flatMap((item) => [item.id, item.receiptLineId, item.warehouseId, item.checkedBy]),
+      ...seedAttachments.flatMap((item) => [item.id, item.uploadedBy]),
+    ]
+    expect(ids.every((id) => uuid.test(id))).toBe(true)
+  })
+
+  it('EAN-13、Code128 和 GS1 返回 EXTERNAL_BARCODE 结构化结果', async () => {
+    const ean = await apiParseScan({ content: '6901234567892' })
+    expect(ean).toMatchObject({ type: 'EXTERNAL_BARCODE', external: { format: 'EAN_13' }, material: { materialCode: 'MAT-001' } })
+    const code128 = await apiParseScan({ content: 'MAT-001' })
+    expect(code128).toMatchObject({ type: 'EXTERNAL_BARCODE', external: { format: 'CODE_128' } })
+    const gs1 = await apiParseScan({ content: '(01)06901234567892(10)SUP-BATCH-01(11)260801(15)270801(30)10' })
+    expect(gs1).toMatchObject({
+      type: 'EXTERNAL_BARCODE', quantity: '10.0000',
+      batchProps: { sourceBatchNo: 'SUP-BATCH-01', productionDate: '2026-08-01', expiryDate: '2027-08-01' },
+    })
   })
 })
-

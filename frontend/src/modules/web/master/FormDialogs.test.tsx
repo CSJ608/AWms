@@ -84,7 +84,7 @@ describe('新建对话框打开时清空表单（验收⑥）', () => {
 
   it('库位：新建打开清空；编辑态回填；编辑→新建切换清空', () => {
     const props = {
-      warehouseId: 'wh-01', open: false, editing: null as LocationItem | null, onOpenChange: vi.fn(), onSaved: vi.fn(),
+      warehouseId: seedWarehouses[0].id, open: false, editing: null as LocationItem | null, onOpenChange: vi.fn(), onSaved: vi.fn(),
     }
     const view = render(wrap(<LocationFormDialog {...props} />))
     const openWith = (editing: LocationItem | null, open: boolean) =>

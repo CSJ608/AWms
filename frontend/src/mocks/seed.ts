@@ -13,8 +13,29 @@ export const MOCK_TOKEN_PREFIX = 'mock-token-'
 /** 测试用：模拟过期 token（触发 401 刷新链路） */
 export const MOCK_EXPIRED_TOKEN = 'mock-expired-token'
 
+/** 所有 Mock 主键也遵守生产 UUID 契约，避免短字符串掩盖真实绑定错误。 */
+export function mockUuid(namespace: number, index: number): string {
+  return `${namespace.toString(16).padStart(8, '0')}-0000-4000-8000-${index.toString(16).padStart(12, '0')}`
+}
+
+export const MOCK_IDS = {
+  userAdmin: mockUuid(2, 1), userOperator: mockUuid(2, 2), userSupervisor: mockUuid(2, 3), userDisabled: mockUuid(2, 4),
+  roleAdmin: mockUuid(3, 1), roleOperator: mockUuid(3, 2), roleSupervisor: mockUuid(3, 3),
+  material1: mockUuid(4, 1), material2: mockUuid(4, 2), material3: mockUuid(4, 3), material4: mockUuid(4, 4), material6: mockUuid(4, 6),
+  warehouse1: mockUuid(5, 1), warehouse2: mockUuid(5, 2), warehouse3: mockUuid(5, 3),
+  locationStaging1: mockUuid(6, 1), locationDefault1: mockUuid(6, 2), locationDefault2: mockUuid(6, 3),
+  locationStaging2: mockUuid(6, 4), locationDefault3: mockUuid(6, 5), locationStaging3: mockUuid(6, 6),
+  sourceSupplier1: mockUuid(7, 1), sourceSupplier2: mockUuid(7, 2), sourceSupplier3: mockUuid(7, 3), sourceWorkshop1: mockUuid(7, 4), sourceWorkshop2: mockUuid(7, 5),
+  batch1: mockUuid(8, 1), batch2: mockUuid(8, 2), batch3: mockUuid(8, 3), batch4: mockUuid(8, 4),
+  inboundOrder1: mockUuid(9, 1), inboundOrder2: mockUuid(9, 2),
+  inboundOrderLine1: mockUuid(10, 1), inboundOrderLine2: mockUuid(10, 2), inboundOrderLine3: mockUuid(10, 3),
+  receipt1: mockUuid(11, 1), receipt2: mockUuid(11, 2), receipt3: mockUuid(11, 3), receipt4: mockUuid(11, 4), receipt5: mockUuid(11, 5),
+  receiptLine1: mockUuid(12, 1), receiptLine2: mockUuid(12, 2), receiptLine3: mockUuid(12, 3), receiptLine4: mockUuid(12, 4), receiptLine5: mockUuid(12, 5),
+  quality1: mockUuid(13, 1), attachment1: mockUuid(14, 1), attachment2: mockUuid(14, 2),
+} as const
+
 // ── 权限点（模块注册表，只读；与后端注册表对齐：route/menu.<moduleCode>）──────────
-export const seedPermissions: PermissionItem[] = [
+const seedPermissionRows: PermissionItem[] = [
   // 路由
   { id: 'p-route-master', code: 'route.master-data', name: '主数据', category: 'ROUTE', moduleCode: 'master-data' },
   { id: 'p-route-inbound', code: 'route.inbound', name: '入库', category: 'ROUTE', moduleCode: 'inbound' },
@@ -51,6 +72,7 @@ export const seedPermissions: PermissionItem[] = [
   { id: 'p-act-src-u', code: 'action.source.edit', name: '编辑来源', category: 'ACTION', moduleCode: 'master-data' },
   { id: 'p-act-src-d', code: 'action.source.delete', name: '删除来源', category: 'ACTION', moduleCode: 'master-data' },
 ]
+export const seedPermissions: PermissionItem[] = seedPermissionRows.map((permission, index) => ({ ...permission, id: mockUuid(1, index + 1) }))
 
 const ALL_PERMISSIONS = seedPermissions.map((p) => p.code)
 // 与后端默认角色一致：OPERATOR 仅 inbound（无 master-data 菜单/路由/操作权限）
@@ -90,42 +112,42 @@ const SUPERVISOR_PERMISSIONS = [
 // ── 用户 / 角色 ───────────────────────────────────────
 export const seedUsers: UserItem[] = [
   {
-    id: 'u-admin',
+    id: MOCK_IDS.userAdmin,
     username: 'admin',
     name: '系统管理员',
     status: 'ACTIVE',
     roles: [
-      { id: 'r-admin', code: 'SYSTEM_ADMIN', name: '系统管理员', permissionCodes: ALL_PERMISSIONS, createdAt: NOW },
+      { id: MOCK_IDS.roleAdmin, code: 'SYSTEM_ADMIN', name: '系统管理员', permissionCodes: ALL_PERMISSIONS, createdAt: NOW },
     ],
     createdAt: NOW,
   },
   {
-    id: 'u-wang01',
+    id: MOCK_IDS.userOperator,
     username: 'wang01',
     name: '王仓管',
     status: 'ACTIVE',
     roles: [
-      { id: 'r-op', code: 'OPERATOR', name: '作业员', permissionCodes: OPERATOR_PERMISSIONS, createdAt: NOW },
+      { id: MOCK_IDS.roleOperator, code: 'OPERATOR', name: '作业员', permissionCodes: OPERATOR_PERMISSIONS, createdAt: NOW },
     ],
     createdAt: NOW,
   },
   {
-    id: 'u-zhang03',
+    id: MOCK_IDS.userSupervisor,
     username: 'zhang03',
     name: '张组长',
     status: 'ACTIVE',
     roles: [
-      { id: 'r-sup', code: 'SUPERVISOR', name: '仓管', permissionCodes: SUPERVISOR_PERMISSIONS, createdAt: NOW },
+      { id: MOCK_IDS.roleSupervisor, code: 'SUPERVISOR', name: '仓管', permissionCodes: SUPERVISOR_PERMISSIONS, createdAt: NOW },
     ],
     createdAt: NOW,
   },
   {
-    id: 'u-li02',
+    id: MOCK_IDS.userDisabled,
     username: 'li02',
     name: '李停用',
     status: 'DISABLED',
     roles: [
-      { id: 'r-op', code: 'OPERATOR', name: '作业员', permissionCodes: OPERATOR_PERMISSIONS, createdAt: NOW },
+      { id: MOCK_IDS.roleOperator, code: 'OPERATOR', name: '作业员', permissionCodes: OPERATOR_PERMISSIONS, createdAt: NOW },
     ],
     createdAt: NOW,
   },
@@ -218,7 +240,7 @@ const MATERIAL_NAMES: Array<[string, string, boolean, string, string, string | n
 const SEARCH_CODES = ['LM', 'DP', 'LS', 'GB', 'LX', 'ZC', 'MFQ', 'QG', 'DCF', 'JDQ', 'PL', 'SD', 'JS', 'TBD', 'CL', 'LT', 'HS', 'YQ', 'XS', 'SZ', 'BQZ', 'TD', 'ZD', 'BWG', 'CT']
 
 export const seedMaterials: MaterialItem[] = MATERIAL_NAMES.map(([code, name, batchControlled, labelType, defaultUom, qty], i) => ({
-  id: `mat-${String(i + 1).padStart(3, '0')}`,
+  id: mockUuid(4, i + 1),
   code,
   name,
   searchCode: SEARCH_CODES[i],
@@ -233,48 +255,48 @@ export const seedMaterials: MaterialItem[] = MATERIAL_NAMES.map(([code, name, ba
 
 // ── 仓库 / 库位 ───────────────────────────────────────
 export const seedWarehouses: WarehouseItem[] = [
-  { id: 'wh-01', code: 'WH-01', name: '一号仓', searchCode: 'YHC', status: 'ENABLED', mgmtMode: 'MANUAL', createdAt: iso(10) },
-  { id: 'wh-02', code: 'WH-02', name: '二号仓', searchCode: 'EHC', status: 'ENABLED', mgmtMode: 'MANUAL', createdAt: iso(8) },
-  { id: 'wh-03', code: 'WH-03', name: '三号仓', searchCode: 'SHC', status: 'DISABLED', mgmtMode: 'MANUAL', createdAt: iso(5) },
+  { id: MOCK_IDS.warehouse1, code: 'WH-01', name: '一号仓', searchCode: 'YHC', status: 'ENABLED', mgmtMode: 'MANUAL', createdAt: iso(10) },
+  { id: MOCK_IDS.warehouse2, code: 'WH-02', name: '二号仓', searchCode: 'EHC', status: 'ENABLED', mgmtMode: 'MANUAL', createdAt: iso(8) },
+  { id: MOCK_IDS.warehouse3, code: 'WH-03', name: '三号仓', searchCode: 'SHC', status: 'DISABLED', mgmtMode: 'MANUAL', createdAt: iso(5) },
 ]
 
 export const seedLocations: LocationItem[] = [
-  { id: 'loc-01', warehouseId: 'wh-01', warehouseCode: 'WH-01', code: 'STG-01', searchCode: 'ZC', type: 'STAGING', status: 'ENABLED', reachability: 'UNIVERSAL', createdAt: iso(9) },
-  { id: 'loc-02', warehouseId: 'wh-01', warehouseCode: 'WH-01', code: 'DEF-01', searchCode: 'MR', type: 'DEFAULT', status: 'ENABLED', reachability: 'UNIVERSAL', createdAt: iso(9) },
-  { id: 'loc-03', warehouseId: 'wh-01', warehouseCode: 'WH-01', code: 'DEF-02', searchCode: 'MR2', type: 'DEFAULT', status: 'ENABLED', reachability: 'MANUAL_ONLY', createdAt: iso(9) },
-  { id: 'loc-04', warehouseId: 'wh-02', warehouseCode: 'WH-02', code: 'STG-01', searchCode: 'ZC', type: 'STAGING', status: 'ENABLED', reachability: 'UNIVERSAL', createdAt: iso(7) },
-  { id: 'loc-05', warehouseId: 'wh-02', warehouseCode: 'WH-02', code: 'DEF-01', searchCode: 'MR', type: 'DEFAULT', status: 'ENABLED', reachability: 'UNIVERSAL', createdAt: iso(7) },
-  { id: 'loc-06', warehouseId: 'wh-03', warehouseCode: 'WH-03', code: 'STG-01', searchCode: 'ZC', type: 'STAGING', status: 'DISABLED', reachability: 'UNIVERSAL', createdAt: iso(4) },
+  { id: MOCK_IDS.locationStaging1, warehouseId: MOCK_IDS.warehouse1, warehouseCode: 'WH-01', code: 'STG-01', searchCode: 'ZC', type: 'STAGING', status: 'ENABLED', reachability: 'UNIVERSAL', createdAt: iso(9) },
+  { id: MOCK_IDS.locationDefault1, warehouseId: MOCK_IDS.warehouse1, warehouseCode: 'WH-01', code: 'DEF-01', searchCode: 'MR', type: 'DEFAULT', status: 'ENABLED', reachability: 'UNIVERSAL', createdAt: iso(9) },
+  { id: MOCK_IDS.locationDefault2, warehouseId: MOCK_IDS.warehouse1, warehouseCode: 'WH-01', code: 'DEF-02', searchCode: 'MR2', type: 'DEFAULT', status: 'ENABLED', reachability: 'MANUAL_ONLY', createdAt: iso(9) },
+  { id: MOCK_IDS.locationStaging2, warehouseId: MOCK_IDS.warehouse2, warehouseCode: 'WH-02', code: 'STG-01', searchCode: 'ZC', type: 'STAGING', status: 'ENABLED', reachability: 'UNIVERSAL', createdAt: iso(7) },
+  { id: MOCK_IDS.locationDefault3, warehouseId: MOCK_IDS.warehouse2, warehouseCode: 'WH-02', code: 'DEF-01', searchCode: 'MR', type: 'DEFAULT', status: 'ENABLED', reachability: 'UNIVERSAL', createdAt: iso(7) },
+  { id: MOCK_IDS.locationStaging3, warehouseId: MOCK_IDS.warehouse3, warehouseCode: 'WH-03', code: 'STG-01', searchCode: 'ZC', type: 'STAGING', status: 'DISABLED', reachability: 'UNIVERSAL', createdAt: iso(4) },
 ]
 
 // ── 来源 ──────────────────────────────────────────────
 export const seedSources: SourceItem[] = [
-  { id: 'src-01', type: 'SUPPLIER', code: 'SUP-001', name: '华东五金', searchCode: 'HDWJ', status: 'ENABLED', createdAt: iso(12) },
-  { id: 'src-02', type: 'SUPPLIER', code: 'SUP-002', name: '华南钢材', searchCode: 'HNGC', status: 'ENABLED', createdAt: iso(11) },
-  { id: 'src-03', type: 'SUPPLIER', code: 'SUP-003', name: '天成电气', searchCode: 'TCDQ', status: 'ENABLED', createdAt: iso(6) },
-  { id: 'src-04', type: 'WORKSHOP', code: 'WS-01', name: '一车间', searchCode: 'YCJ', status: 'ENABLED', createdAt: iso(3) },
-  { id: 'src-05', type: 'WORKSHOP', code: 'WS-02', name: '二车间', searchCode: 'ECJ', status: 'DISABLED', createdAt: iso(2) },
+  { id: MOCK_IDS.sourceSupplier1, type: 'SUPPLIER', code: 'SUP-001', name: '华东五金', searchCode: 'HDWJ', status: 'ENABLED', createdAt: iso(12) },
+  { id: MOCK_IDS.sourceSupplier2, type: 'SUPPLIER', code: 'SUP-002', name: '华南钢材', searchCode: 'HNGC', status: 'ENABLED', createdAt: iso(11) },
+  { id: MOCK_IDS.sourceSupplier3, type: 'SUPPLIER', code: 'SUP-003', name: '天成电气', searchCode: 'TCDQ', status: 'ENABLED', createdAt: iso(6) },
+  { id: MOCK_IDS.sourceWorkshop1, type: 'WORKSHOP', code: 'WS-01', name: '一车间', searchCode: 'YCJ', status: 'ENABLED', createdAt: iso(3) },
+  { id: MOCK_IDS.sourceWorkshop2, type: 'WORKSHOP', code: 'WS-02', name: '二车间', searchCode: 'ECJ', status: 'DISABLED', createdAt: iso(2) },
 ]
 
 // ── 批次（系统自动建，只读）────────────────────────────
 export const seedBatches: BatchItem[] = [
   {
-    id: 'b-01', materialId: 'mat-001', materialCode: 'MAT-001', materialName: '螺母 M6',
+    id: MOCK_IDS.batch1, materialId: MOCK_IDS.material1, materialCode: 'MAT-001', materialName: '螺母 M6',
     batchNo: '260810001', sourceBatchNo: 'PRD-260809-01', sourceType: 'WORKSHOP', sourceCode: 'WS-01',
     productionDate: '2026-08-09', expiryDate: null, status: 'ACTIVE', createdAt: iso(1),
   },
   {
-    id: 'b-02', materialId: 'mat-001', materialCode: 'MAT-001', materialName: '螺母 M6',
+    id: MOCK_IDS.batch2, materialId: MOCK_IDS.material1, materialCode: 'MAT-001', materialName: '螺母 M6',
     batchNo: '260810002', sourceBatchNo: 'PRD-260808-01', sourceType: 'WORKSHOP', sourceCode: 'WS-01',
     productionDate: '2026-08-08', expiryDate: null, status: 'ACTIVE', createdAt: iso(2),
   },
   {
-    id: 'b-03', materialId: 'mat-002', materialCode: 'MAT-002', materialName: '垫片 8mm',
+    id: MOCK_IDS.batch3, materialId: MOCK_IDS.material2, materialCode: 'MAT-002', materialName: '垫片 8mm',
     batchNo: '260809001', sourceBatchNo: 'PO-20260805-01', sourceType: 'SUPPLIER', sourceCode: 'SUP-001',
     productionDate: '2026-08-09', expiryDate: '2027-08-09', status: 'ACTIVE', createdAt: iso(1),
   },
   {
-    id: 'b-04', materialId: 'mat-004', materialCode: 'MAT-004', materialName: '钢板 2mm',
+    id: MOCK_IDS.batch4, materialId: MOCK_IDS.material4, materialCode: 'MAT-004', materialName: '钢板 2mm',
     batchNo: '260808001', sourceBatchNo: 'PO-20260803-02', sourceType: 'SUPPLIER', sourceCode: 'SUP-002',
     productionDate: '2026-08-08', expiryDate: null, status: 'ACTIVE', createdAt: iso(2),
   },
@@ -284,19 +306,19 @@ export const seedBatches: BatchItem[] = [
 
 export const seedInboundOrders: InboundOrder[] = [
   {
-    id: 'io-001',
+    id: MOCK_IDS.inboundOrder1,
     orderNo: 'PO-20260819-0001',
     type: 'PO',
-    warehouseId: 'wh-01',
+    warehouseId: MOCK_IDS.warehouse1,
     warehouseCode: 'WH-01',
     sourceType: 'SUPPLIER',
     sourceCode: 'SUP-001',
     status: 'CONFIRMED',
     lines: [
       {
-        id: 'iol-001',
+        id: MOCK_IDS.inboundOrderLine1,
         lineNo: 1,
-        materialId: 'mat-001',
+        materialId: MOCK_IDS.material1,
         materialCode: 'MAT-001',
         materialName: '螺母 M6',
         expectedQty: '200.0000',
@@ -305,9 +327,9 @@ export const seedInboundOrders: InboundOrder[] = [
         uniqueCodes: [],
       },
       {
-        id: 'iol-002',
+        id: MOCK_IDS.inboundOrderLine2,
         lineNo: 2,
-        materialId: 'mat-004',
+        materialId: MOCK_IDS.material4,
         materialCode: 'MAT-004',
         materialName: '钢板 2mm',
         expectedQty: '10.0000',
@@ -326,19 +348,19 @@ export const seedInboundOrders: InboundOrder[] = [
     voidReason: null,
   },
   {
-    id: 'io-002',
+    id: MOCK_IDS.inboundOrder2,
     orderNo: 'PR-20260819-0002',
     type: 'PR',
-    warehouseId: 'wh-01',
+    warehouseId: MOCK_IDS.warehouse1,
     warehouseCode: 'WH-01',
     sourceType: 'WORKSHOP',
     sourceCode: 'WS-01',
     status: 'RECEIVING',
     lines: [
       {
-        id: 'iol-003',
+        id: MOCK_IDS.inboundOrderLine3,
         lineNo: 1,
-        materialId: 'mat-006',
+        materialId: MOCK_IDS.material6,
         materialCode: 'MAT-006',
         materialName: '轴承 6204',
         expectedQty: '50.0000',
@@ -357,9 +379,9 @@ export const seedInboundOrders: InboundOrder[] = [
 
 export const seedReceipts: Receipt[] = [
   {
-    id: 'rcp-001',
+    id: MOCK_IDS.receipt1,
     receiptNo: 'RCP-20260819-0001',
-    warehouseId: 'wh-01',
+    warehouseId: MOCK_IDS.warehouse1,
     warehouseCode: 'WH-01',
     inboundOrderId: null,
     sourceDocType: 'PR',
@@ -369,14 +391,14 @@ export const seedReceipts: Receipt[] = [
     status: 'RECEIVING',
     lines: [
       {
-        id: 'rl-001',
+        id: MOCK_IDS.receiptLine1,
         lineNo: 1,
         orderLineId: null,
         orderLineNo: null,
-        materialId: 'mat-001',
+        materialId: MOCK_IDS.material1,
         materialCode: 'MAT-001',
         materialName: '螺母 M6',
-        batchId: 'b-01',
+        batchId: MOCK_IDS.batch1,
         batchNo: '260810001',
         expectedQty: null,
         actualQty: '200.0000',
@@ -387,17 +409,17 @@ export const seedReceipts: Receipt[] = [
         expiryDate: null,
       },
     ],
-    stagingLocationId: 'loc-01',
+    stagingLocationId: MOCK_IDS.locationStaging1,
     stagingLocationCode: 'STG-01',
-    photos: ['att-001'],
-    operatorId: 'u-wang01',
+    photos: [MOCK_IDS.attachment1],
+    operatorId: MOCK_IDS.userOperator,
     operatorName: '王仓管',
     occurredAt: '2026-08-19T05:20:00Z',
   },
   {
-    id: 'rcp-002',
+    id: MOCK_IDS.receipt2,
     receiptNo: 'RCP-20260819-0002',
-    warehouseId: 'wh-01',
+    warehouseId: MOCK_IDS.warehouse1,
     warehouseCode: 'WH-01',
     inboundOrderId: null,
     sourceDocType: 'PR',
@@ -407,14 +429,14 @@ export const seedReceipts: Receipt[] = [
     status: 'PUTAWAY',
     lines: [
       {
-        id: 'rl-002',
+        id: MOCK_IDS.receiptLine2,
         lineNo: 1,
         orderLineId: null,
         orderLineNo: null,
-        materialId: 'mat-001',
+        materialId: MOCK_IDS.material1,
         materialCode: 'MAT-001',
         materialName: '螺母 M6',
-        batchId: 'b-01',
+        batchId: MOCK_IDS.batch1,
         batchNo: '260810001',
         expectedQty: null,
         actualQty: '200.0000',
@@ -425,17 +447,17 @@ export const seedReceipts: Receipt[] = [
         expiryDate: null,
       },
     ],
-    stagingLocationId: 'loc-01',
+    stagingLocationId: MOCK_IDS.locationStaging1,
     stagingLocationCode: 'STG-01',
     photos: [],
-    operatorId: 'u-wang01',
+    operatorId: MOCK_IDS.userOperator,
     operatorName: '王仓管',
     occurredAt: '2026-08-19T06:00:00Z',
   },
   {
-    id: 'rcp-003',
+    id: MOCK_IDS.receipt3,
     receiptNo: 'RCP-20260819-0003',
-    warehouseId: 'wh-01',
+    warehouseId: MOCK_IDS.warehouse1,
     warehouseCode: 'WH-01',
     inboundOrderId: null,
     sourceDocType: 'PR',
@@ -445,14 +467,14 @@ export const seedReceipts: Receipt[] = [
     status: 'CHECKING',
     lines: [
       {
-        id: 'rl-003',
+        id: MOCK_IDS.receiptLine3,
         lineNo: 1,
         orderLineId: null,
         orderLineNo: null,
-        materialId: 'mat-006',
+        materialId: MOCK_IDS.material6,
         materialCode: 'MAT-006',
         materialName: '轴承 6204',
-        batchId: 'b-01',
+        batchId: MOCK_IDS.batch1,
         batchNo: '260810001',
         expectedQty: null,
         actualQty: '30.0000',
@@ -463,17 +485,17 @@ export const seedReceipts: Receipt[] = [
         expiryDate: null,
       },
     ],
-    stagingLocationId: 'loc-01',
+    stagingLocationId: MOCK_IDS.locationStaging1,
     stagingLocationCode: 'STG-01',
     photos: [],
-    operatorId: 'u-wang01',
+    operatorId: MOCK_IDS.userOperator,
     operatorName: '王仓管',
     occurredAt: '2026-08-19T06:30:00Z',
   },
   {
-    id: 'rcp-004',
+    id: MOCK_IDS.receipt4,
     receiptNo: 'RCP-20260819-0004',
-    warehouseId: 'wh-01',
+    warehouseId: MOCK_IDS.warehouse1,
     warehouseCode: 'WH-01',
     inboundOrderId: null,
     sourceDocType: 'PR',
@@ -483,14 +505,14 @@ export const seedReceipts: Receipt[] = [
     status: 'RECEIVING',
     lines: [
       {
-        id: 'rl-004',
+        id: MOCK_IDS.receiptLine4,
         lineNo: 1,
         orderLineId: null,
         orderLineNo: null,
-        materialId: 'mat-001',
+        materialId: MOCK_IDS.material1,
         materialCode: 'MAT-001',
         materialName: '螺母 M6',
-        batchId: 'b-01',
+        batchId: MOCK_IDS.batch1,
         batchNo: '260810001',
         expectedQty: null,
         actualQty: '40.0000',
@@ -501,17 +523,17 @@ export const seedReceipts: Receipt[] = [
         expiryDate: null,
       },
     ],
-    stagingLocationId: 'loc-01',
+    stagingLocationId: MOCK_IDS.locationStaging1,
     stagingLocationCode: 'STG-01',
     photos: [],
-    operatorId: 'u-wang01',
+    operatorId: MOCK_IDS.userOperator,
     operatorName: '王仓管',
     occurredAt: '2026-08-19T07:20:00Z',
   },
   {
-    id: 'rcp-005',
+    id: MOCK_IDS.receipt5,
     receiptNo: 'RCP-20260819-0005',
-    warehouseId: 'wh-01',
+    warehouseId: MOCK_IDS.warehouse1,
     warehouseCode: 'WH-01',
     inboundOrderId: null,
     sourceDocType: 'PO',
@@ -521,14 +543,14 @@ export const seedReceipts: Receipt[] = [
     status: 'RECEIVING',
     lines: [
       {
-        id: 'rl-005',
+        id: MOCK_IDS.receiptLine5,
         lineNo: 1,
         orderLineId: null,
         orderLineNo: null,
-        materialId: 'mat-002',
+        materialId: MOCK_IDS.material2,
         materialCode: 'MAT-002',
         materialName: '垫片 8mm',
-        batchId: 'b-03',
+        batchId: MOCK_IDS.batch3,
         batchNo: '260809001',
         expectedQty: null,
         actualQty: '12.0000',
@@ -539,10 +561,10 @@ export const seedReceipts: Receipt[] = [
         expiryDate: '2027-08-09',
       },
     ],
-    stagingLocationId: 'loc-01',
+    stagingLocationId: MOCK_IDS.locationStaging1,
     stagingLocationCode: 'STG-01',
     photos: [],
-    operatorId: 'u-wang01',
+    operatorId: MOCK_IDS.userOperator,
     operatorName: '王仓管',
     occurredAt: '2026-08-19T07:35:00Z',
   },
@@ -550,10 +572,10 @@ export const seedReceipts: Receipt[] = [
 
 export const seedQualityChecks: QualityExceptionItem[] = [
   {
-    id: 'qc-001',
-    receiptLineId: 'rl-003',
+    id: MOCK_IDS.quality1,
+    receiptLineId: MOCK_IDS.receiptLine3,
     receiptNo: 'RCP-20260819-0003',
-    warehouseId: 'wh-01',
+    warehouseId: MOCK_IDS.warehouse1,
     warehouseCode: 'WH-01',
     materialCode: 'MAT-006',
     materialName: '轴承 6204',
@@ -561,8 +583,8 @@ export const seedQualityChecks: QualityExceptionItem[] = [
     checkedQty: '30.0000',
     exceptionReason: 'DAMAGED',
     note: '外箱破损',
-    photoIds: ['att-002'],
-    checkedBy: 'u-wang01',
+    photoIds: [MOCK_IDS.attachment2],
+    checkedBy: MOCK_IDS.userOperator,
     checkedByName: '王仓管',
     checkedAt: '2026-08-19T07:00:00Z',
     resolutionAction: null,
@@ -575,30 +597,30 @@ export const seedQualityChecks: QualityExceptionItem[] = [
 
 export const seedAttachments: AttachmentItem[] = [
   {
-    id: 'att-001',
-    fileName: 'receipt-001.jpg',
-    mimeType: 'image/jpeg',
+    id: MOCK_IDS.attachment1,
+    fileName: 'receipt-001.png',
+    mimeType: 'image/png',
     size: 128000,
     bizType: 'RECEIPT',
-    bizId: 'rcp-001',
-    uploadedBy: 'u-wang01',
+    bizId: MOCK_IDS.receipt1,
+    uploadedBy: MOCK_IDS.userOperator,
     uploadedByName: '王仓管',
     uploadedAt: '2026-08-19T05:18:00Z',
-    url: '/api/attachments/att-001',
-    thumbnailUrl: '/api/attachments/att-001/thumbnail',
+    url: `/api/attachments/${MOCK_IDS.attachment1}`,
+    thumbnailUrl: `/api/attachments/${MOCK_IDS.attachment1}/thumbnail`,
   },
   {
-    id: 'att-002',
-    fileName: 'exception-001.jpg',
-    mimeType: 'image/jpeg',
+    id: MOCK_IDS.attachment2,
+    fileName: 'exception-001.png',
+    mimeType: 'image/png',
     size: 156000,
     bizType: 'EXCEPTION',
-    bizId: 'qc-001',
-    uploadedBy: 'u-wang01',
+    bizId: MOCK_IDS.quality1,
+    uploadedBy: MOCK_IDS.userOperator,
     uploadedByName: '王仓管',
     uploadedAt: '2026-08-19T06:58:00Z',
-    url: '/api/attachments/att-002',
-    thumbnailUrl: '/api/attachments/att-002/thumbnail',
+    url: `/api/attachments/${MOCK_IDS.attachment2}`,
+    thumbnailUrl: `/api/attachments/${MOCK_IDS.attachment2}/thumbnail`,
   },
 ]
 

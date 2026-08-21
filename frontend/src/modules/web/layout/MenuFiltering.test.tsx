@@ -14,6 +14,7 @@ import { AuthContext } from '@/platform/auth/auth-context'
 import { MasterListPage } from '@/platform/master/MasterListPage'
 import { textColumn } from '@/platform/table/columns'
 import { makeAdminSession, makeOperatorSession, makeSupervisorSession, renderApp, seedSession } from '@/test/utils'
+import { MOCK_IDS } from '@/mocks/seed'
 
 describe('菜单与权限过滤', () => {
   it('管理员：四个主数据菜单齐全 + 操作按钮可见', async () => {
@@ -100,7 +101,7 @@ describe('菜单与权限过滤', () => {
 
   it('仓管（SUPERVISOR）：库位页按钮可见（action.location.*）', async () => {
     seedSession(makeSupervisorSession())
-    renderApp('/web/master/warehouses/wh-01/locations')
+    renderApp(`/web/master/warehouses/${MOCK_IDS.warehouse1}/locations`)
     await screen.findByText('STG-01')
     expect(screen.getByTestId('btn-create')).toBeInTheDocument()
     expect(screen.getAllByTestId('btn-edit').length).toBeGreaterThan(0)

@@ -102,17 +102,17 @@ export const apiPrintReceipt = (id: string, idempotencyKey: string) =>
 export const apiListQualityTodos = (query: ListQuery) =>
   request<PageResult<QualityTodo>>('/quality-todos/search', { method: 'POST', body: toSearchBody(query) })
 export const apiSubmitQualityCheck = (lineId: string, body: QualityCheckRequest, idempotencyKey: string) =>
-  request<void>(`/receipt-lines/${lineId}/quality-check`, { method: 'POST', body, idempotencyKey })
+  request<unknown>(`/receipt-lines/${lineId}/quality-check`, { method: 'POST', body, idempotencyKey })
 export const apiListQualityExceptions = (query: ListQuery) =>
   request<PageResult<QualityExceptionItem>>('/quality-checks/search', { method: 'POST', body: toSearchBody(query) })
 export const apiResolveQualityException = (checkId: string, body: QualityResolveRequest, idempotencyKey: string) =>
-  request<QualityExceptionItem>(`/quality-checks/${checkId}/resolve`, { method: 'POST', body, idempotencyKey })
+  request<unknown>(`/quality-checks/${checkId}/resolve`, { method: 'POST', body, idempotencyKey })
 export const apiListPutawayTodos = (query: ListQuery) =>
   request<PageResult<PutawayTodo>>('/putaway-todos/search', { method: 'POST', body: toSearchBody(query) })
 export const apiGetPutawayRecommendations = (receiptLineId: string) =>
   request<LocationRecommendation[]>(`/putaway-todos/${receiptLineId}/recommendations`)
 export const apiCreatePutawayRecord = (body: PutawayRecordCreateRequest, idempotencyKey: string) =>
-  request<void>('/putaway-records', { method: 'POST', body, idempotencyKey })
+  request<unknown>('/putaway-records', { method: 'POST', body, idempotencyKey })
 
 // ── 扫码 / 附件 / 打印 ────────────────────────────────
 export const apiParseScan = (body: ScanParseRequest) =>

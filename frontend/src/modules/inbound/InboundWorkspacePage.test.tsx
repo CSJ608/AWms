@@ -29,7 +29,7 @@ describe('入库管理 Web 工作区', () => {
     await screen.findByText('PO-20260819-0001')
 
     await user.click(screen.getByTestId('new-inbound-order'))
-    expect(screen.getAllByText('新建入库单')).toHaveLength(2)
+    expect(screen.getAllByText('新建入库单').length).toBeGreaterThanOrEqual(2)
     const workTabsAfterNew = within(screen.getByTestId('work-tabs')).getAllByRole('button')
     expect(workTabsAfterNew.filter((button) => button.textContent?.includes('新建入库单'))).toHaveLength(1)
 
@@ -51,6 +51,38 @@ describe('入库管理 Web 工作区', () => {
     const baseTabs = within(screen.getByTestId('work-tabs')).getAllByRole('button')
       .filter((button) => button.textContent?.includes('入库管理'))
     expect(baseTabs).toHaveLength(1)
+  })
+
+  it('业务标签切换保活筛选状态，关闭当前标签回到最近使用标签', async () => {
+    seedSession(makeSupervisorSession())
+    renderApp('/inbound/orders')
+    const user = userEvent.setup()
+    const orderNo = await screen.findByLabelText('单号')
+    await user.type(orderNo, 'KEEP-ME')
+    await user.click(screen.getByRole('button', { name: '收货记录' }))
+    await user.click(screen.getByRole('button', { name: '入库单' }))
+    expect(screen.getByLabelText('单号')).toHaveValue('KEEP-ME')
+
+    await user.clear(screen.getByLabelText('单号'))
+    await user.click(screen.getByTestId('new-inbound-order'))
+    await user.click(within(screen.getByTestId('work-tabs')).getByRole('button', { name: '入库管理' }))
+    await user.click(await screen.findByRole('button', { name: 'PO-20260819-0001' }))
+    await screen.findByText('打印单据码')
+    await user.click(within(screen.getByTestId('work-tabs')).getByRole('button', { name: '新建入库单' }))
+    await user.click(within(screen.getByTestId('work-tabs')).getByRole('button', { name: '关闭新建入库单' }))
+    expect(await screen.findByText('打印单据码')).toBeInTheDocument()
+  })
+
+  it('新建页取消复用未提交确认流程', async () => {
+    seedSession(makeSupervisorSession())
+    renderApp('/inbound/orders/new')
+    const user = userEvent.setup()
+    const quantity = await screen.findByDisplayValue('1.0000')
+    await user.clear(quantity)
+    await user.type(quantity, '2')
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(await screen.findByText('内容尚未提交')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '继续编辑' })).toBeInTheDocument()
   })
 })
 

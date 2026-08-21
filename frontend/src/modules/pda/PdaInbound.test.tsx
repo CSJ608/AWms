@@ -4,6 +4,9 @@ import { fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderApp, seedSession, makeOperatorSession, makeSupervisorSession } from '@/test/utils'
 import { server } from '@/mocks/server'
+import { MOCK_IDS } from '@/mocks/seed'
+import { db } from '@/mocks/db'
+import { seedReceipts } from '@/mocks/seed'
 
 const label = (payload: Record<string, unknown>) => `AWMS1:${JSON.stringify(payload)}`
 
@@ -58,7 +61,7 @@ describe('PDA 菜单与入库作业', () => {
     expect(await screen.findByText(/PO-20260819-0001/)).toBeInTheDocument()
     expect(spy.mock.calls.some(([url]) => String(url).includes('/api/inbound-orders/search'))).toBe(false)
 
-    await user.selectOptions(screen.getByLabelText('单据行'), 'iol-002')
+    await user.selectOptions(screen.getByLabelText('单据行'), MOCK_IDS.inboundOrderLine2)
     expect(screen.getByTestId('receiving-qty')).toHaveValue('0.0000')
 
     await scan(user, label({ v: 1, t: 'U', s: 'MAT-004', u: 'BOX-20260820-0001', q: '5.0000' }))
@@ -78,6 +81,10 @@ describe('PDA 菜单与入库作业', () => {
 
     await scan(user, label({ v: 1, t: 'D', ty: 'PO', d: 'PO-20260819-0001', wh: 'WH-01' }))
     await screen.findByText(/PO-20260819-0001/)
+    await user.selectOptions(screen.getByLabelText('单据行'), MOCK_IDS.inboundOrderLine1)
+    await scan(user, label({ v: 1, t: 'S', s: 'MAT-001', q: '200.0000', rb: 'REAL-BATCH-01', pd: '2026-08-20' }))
+    await user.click(screen.getByTestId('review-receipt'))
+    await screen.findByTestId('receiving-confirmation')
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
     fireEvent.change(fileInput, { target: { files: [new File(['bad'], 'bad.txt', { type: 'text/plain' })] } })
@@ -103,7 +110,7 @@ describe('PDA 菜单与入库作业', () => {
     expect(await screen.findByText('未找到待质检任务')).toBeInTheDocument()
   })
 
-  it('上架必须扫库位确认，非法库位由契约错误阻断', async () => {
+  it('上架只允许扫描推荐库位，非推荐库位要求取消并重新扫描', async () => {
     seedSession(makeOperatorSession())
     renderApp('/pda/putaway')
     const user = userEvent.setup()
@@ -111,7 +118,74 @@ describe('PDA 菜单与入库作业', () => {
     await user.click(await screen.findByText(/RCP-20260819-0002/))
     expect(await screen.findByText('DEF-01')).toBeInTheDocument()
     await scan(user, 'STG-01')
+    expect(await screen.findByText(/扫描库位不在推荐列表/)).toBeInTheDocument()
+    expect(screen.getByTestId('submit-putaway')).toBeDisabled()
+  })
+
+  it('PDA 深链接同时受 route 与 action 权限守卫', async () => {
+    const supervisor = makeSupervisorSession()
+    const receivingOnly = { ...supervisor, permissions: ['route.inbound', 'action.receiving.create'] }
+    seedSession(receivingOnly)
+    server.use(http.get('/api/auth/me', () => HttpResponse.json({ code: 'OK', message: 'ok', data: receivingOnly })))
+    renderApp('/pda/putaway')
+    expect(await screen.findByText('无权限')).toBeInTheDocument()
+  })
+
+  it('批次标签预览使用 PrintJobItem.content 渲染二维码', async () => {
+    seedSession(makeOperatorSession())
+    renderApp('/pda/putaway')
+    const user = userEvent.setup()
+    await user.click(await screen.findByText(/RCP-20260819-0002/))
+    await user.click(screen.getByRole('button', { name: /预览标签二维码/ }))
+    const qr = await screen.findAllByTestId('print-qr-code')
+    expect(qr[0].querySelector('svg')).toBeInTheDocument()
+  })
+
+  it('同一次收货操作网络重试复用稳定 Idempotency-Key', async () => {
+    seedSession(makeOperatorSession())
+    const keys: string[] = []
+    server.use(http.post('/api/receipts', async ({ request }) => {
+      keys.push(request.headers.get('Idempotency-Key') ?? '')
+      if (keys.length === 1) return HttpResponse.json({ code: 'NETWORK_ERROR', message: '响应中断', data: null }, { status: 503 })
+      return HttpResponse.json({ code: 'OK', message: 'ok', data: seedReceipts[0] }, { status: 201 })
+    }))
+    renderApp('/pda/receiving')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: '其他入库（OT）' }))
+    await scan(user, 'MAT-002')
+    expect((await screen.findAllByText(/MAT-002 垫片 8mm/)).length).toBeGreaterThan(0)
+    await user.selectOptions(screen.getByLabelText('暂存库位'), MOCK_IDS.locationStaging1)
+    await user.click(screen.getByTestId('review-receipt'))
+    await screen.findByTestId('receiving-confirmation')
+    await user.click(screen.getByTestId('submit-receipt'))
+    expect(await screen.findByText('响应中断')).toBeInTheDocument()
+    await user.click(screen.getByTestId('submit-receipt'))
+    expect(await screen.findByText('收货成功')).toBeInTheDocument()
+    expect(keys).toHaveLength(2)
+    expect(keys[0]).toBe(keys[1])
+  })
+
+  it('VERSION_CONFLICT 后刷新库存版本并使用新版本重试', async () => {
+    seedSession(makeOperatorSession())
+    const versions: number[] = []
+    server.use(http.post('/api/putaway-records', async ({ request }) => {
+      const body = await request.json() as { expectedInventoryVersion: number }
+      versions.push(body.expectedInventoryVersion)
+      if (versions.length === 1) {
+        db.putawayVersions[MOCK_IDS.receiptLine2] = 4
+        return HttpResponse.json({ code: 'VERSION_CONFLICT', message: '库存版本已变化，请刷新后重试', data: null }, { status: 409 })
+      }
+      return new HttpResponse(null, { status: 204 })
+    }))
+    renderApp('/pda/putaway')
+    const user = userEvent.setup()
+    await user.click(await screen.findByText(/RCP-20260819-0002/))
+    await scan(user, 'DEF-01')
     await user.click(screen.getByTestId('submit-putaway'))
-    expect(await screen.findByText('目标库位不合法')).toBeInTheDocument()
+    expect(await screen.findByText(/库存版本已变化/)).toBeInTheDocument()
+    await scan(user, 'DEF-01')
+    await user.click(screen.getByTestId('submit-putaway'))
+    expect(await screen.findByText('上架完成')).toBeInTheDocument()
+    expect(versions).toEqual([3, 4])
   })
 })

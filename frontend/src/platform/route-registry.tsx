@@ -90,3 +90,19 @@ export function RequireInboundRoute({ children }: { children: ReactNode }) {
   }
   return children
 }
+
+/** PDA 直接路由同时要求入库模块路由权限和对应 action 权限。 */
+export function RequirePdaAction({ action, children }: { action: string; children: ReactNode }) {
+  const { hasPerm } = useAuth()
+  const { t } = useTranslation()
+
+  if (!hasPerm('route.inbound') || !hasPerm(action)) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-1 text-center">
+        <p className="text-base font-medium">{t('common.noPermission')}</p>
+        <p className="text-sm text-muted-foreground">{t('common.noPermissionDesc')}</p>
+      </div>
+    )
+  }
+  return children
+}

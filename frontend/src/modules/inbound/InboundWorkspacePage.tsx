@@ -1,16 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertTriangle, FileText, ImageIcon, PackagePlus, Printer, RotateCw, X,
+  AlertTriangle, Eye, FileText, PackagePlus, Printer, RotateCw, X,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   apiCreateInboundOrder, apiGetInboundOrder, apiGetReceipt, apiListInboundOrders, apiListQualityExceptions,
   apiListReceipts, apiPrintBatchLabels, apiPrintExternalLabels, apiPrintInboundOrderQr, apiPrintReceipt,
-  apiPrintUniqueLabels, apiQuickSearchMaterials, apiQuickSearchSources, apiQuickSearchWarehouses,
-  apiResolveQualityException, apiRetryPrintJob, apiVoidInboundOrder,
+  apiPrintUniqueLabels, apiResolveQualityException, apiRetryPrintJob, apiVoidInboundOrder,
 } from '@/api'
 import type {
   InboundOrder, InboundOrderCreateRequest, InboundOrderLine, InboundOrderType, PrintJob,
@@ -20,11 +19,14 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { PrintJobItems } from '@/components/PrintJobItems'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/platform/auth/auth-context'
+import { useStableIdempotencyKey } from '@/platform/idempotency'
+import { ReferencePicker } from '@/platform/picker/ReferencePicker'
 import {
   orderTypeText, qualityReasonText, qtyText, resolutionText, sourceTypeText, statusBadge,
 } from './format'
@@ -35,6 +37,7 @@ type InboundView = 'orders' | 'receipts' | 'exceptions'
 interface NewOrderDraft {
   type: InboundOrderType
   warehouseId: string
+  sourceId: string
   sourceCode: string
   lines: Array<{ materialId: string; expectedQty: string }>
 }
@@ -49,9 +52,10 @@ const tdClass = 'border-b px-2 py-2 align-middle'
 function emptyDraft(): NewOrderDraft {
   return {
     type: 'PO',
-    warehouseId: 'wh-01',
-    sourceCode: 'SUP-001',
-    lines: [{ materialId: 'mat-001', expectedQty: '200.0000' }],
+    warehouseId: '',
+    sourceId: '',
+    sourceCode: '',
+    lines: [{ materialId: '', expectedQty: '1.0000' }],
   }
 }
 
@@ -60,14 +64,25 @@ export function InboundWorkspacePage() {
   const navigate = useNavigate()
   const [tabs, setTabs] = useState<WorkTab[]>([BASE_TAB])
   const [activeKey, setActiveKey] = useState('inbound')
+  const [recentKeys, setRecentKeys] = useState<string[]>(['inbound'])
   const [closeTarget, setCloseTarget] = useState<WorkTab | null>(null)
   const [draft, setDraft] = useState<NewOrderDraft>(() => emptyDraft())
   const draftDirty = isDraftDirty(draft)
+  const scrollPositions = useRef<Record<string, number>>({})
+
+  useLayoutEffect(() => {
+    const main = document.querySelector<HTMLElement>('[data-app-scroll]')
+    const positions = scrollPositions.current
+    if (!main) return
+    main.scrollTop = positions[location.pathname] ?? 0
+    return () => { positions[location.pathname] = main.scrollTop }
+  }, [location.pathname])
 
   useEffect(() => {
     if (location.pathname === '/inbound' || location.pathname === '/inbound/') return
     const next = tabForPath(location.pathname)
     setActiveKey(next.key)
+    setRecentKeys((current) => [next.key, ...current.filter((key) => key !== next.key)])
     setTabs((prev) => {
       const existing = prev.find((tab) => tab.key === next.key)
       if (next.key === 'inbound') {
@@ -96,9 +111,11 @@ export function InboundWorkspacePage() {
   const doCloseTab = (tab: WorkTab) => {
     setTabs((prev) => prev.filter((item) => item.key !== tab.key))
     if (activeKey === tab.key) {
-      const fallback = tabs.find((item) => item.key === 'inbound') ?? BASE_TAB
+      const fallbackKey = recentKeys.find((key) => key !== tab.key && tabs.some((item) => item.key === key))
+      const fallback = tabs.find((item) => item.key === fallbackKey) ?? tabs.find((item) => item.key === 'inbound') ?? BASE_TAB
       navigate(fallback.path)
     }
+    setRecentKeys((current) => current.filter((key) => key !== tab.key))
     if (tab.key === 'order:new') setDraft(emptyDraft())
     setCloseTarget(null)
   }
@@ -155,12 +172,16 @@ export function InboundWorkspacePage() {
         ))}
       </div>
 
+      <div hidden={location.pathname === '/inbound/orders/new' || /^\/inbound\/orders\/[^/]+$/.test(location.pathname)}>
+        <InboundBusinessFrame view={businessView(location.pathname)} />
+      </div>
       <RouteBody
         pathname={location.pathname}
         draft={draft}
         setDraft={setDraft}
         onCreated={handleCreated}
         onTitleOrder={titleOrder}
+        onCancel={() => closeTab(tabForPath('/inbound/orders/new'))}
       />
 
       <AlertDialog open={!!closeTarget} onOpenChange={(open) => !open && setCloseTarget(null)}>
@@ -191,20 +212,25 @@ function tabForPath(pathname: string): WorkTab {
 }
 
 function RouteBody({
-  pathname, draft, setDraft, onCreated, onTitleOrder,
+  pathname, draft, setDraft, onCreated, onTitleOrder, onCancel,
 }: {
   pathname: string
   draft: NewOrderDraft
   setDraft: (draft: NewOrderDraft) => void
   onCreated: (order: InboundOrder) => void
   onTitleOrder: (order: InboundOrder) => void
+  onCancel: () => void
 }) {
-  if (pathname === '/inbound/orders/new') return <NewInboundOrderPage draft={draft} setDraft={setDraft} onCreated={onCreated} />
+  if (pathname === '/inbound/orders/new') return <NewInboundOrderPage draft={draft} setDraft={setDraft} onCreated={onCreated} onCancel={onCancel} />
   const detail = pathname.match(/^\/inbound\/orders\/([^/]+)$/)
   if (detail) return <InboundOrderDetailPage orderId={detail[1]} onLoaded={onTitleOrder} />
-  if (pathname === '/inbound/receipts') return <InboundBusinessFrame view="receipts" />
-  if (pathname === '/inbound/exceptions') return <InboundBusinessFrame view="exceptions" />
-  return <InboundBusinessFrame view="orders" />
+  return null
+}
+
+function businessView(pathname: string): InboundView {
+  if (pathname === '/inbound/receipts') return 'receipts'
+  if (pathname === '/inbound/exceptions') return 'exceptions'
+  return 'orders'
 }
 
 function InboundBusinessFrame({ view }: { view: InboundView }) {
@@ -233,9 +259,9 @@ function InboundBusinessFrame({ view }: { view: InboundView }) {
           </button>
         ))}
       </div>
-      {view === 'orders' && <InboundOrdersView />}
-      {view === 'receipts' && <ReceiptsView />}
-      {view === 'exceptions' && <QualityExceptionsView />}
+      <div hidden={view !== 'orders'}><InboundOrdersView /></div>
+      <div hidden={view !== 'receipts'}><ReceiptsView /></div>
+      <div hidden={view !== 'exceptions'}><QualityExceptionsView /></div>
     </div>
   )
 }
@@ -247,11 +273,11 @@ function InboundOrdersView() {
   const [type, setType] = useState('')
   const [status, setStatus] = useState('')
   const [warehouseId, setWarehouseId] = useState('')
+  const [page, setPage] = useState(1)
   const query = useQuery({
-    queryKey: ['inbound-orders', orderNo, type, status, warehouseId],
-    queryFn: () => apiListInboundOrders({ orderNo, type, status, warehouseId, page: 1, pageSize: 20 }),
+    queryKey: ['inbound-orders', orderNo, type, status, warehouseId, page],
+    queryFn: () => apiListInboundOrders({ orderNo, type, status, warehouseId, page, pageSize: 20 }),
   })
-  const warehouses = useReferenceData().warehouses
 
   return (
     <div className="space-y-3">
@@ -276,10 +302,7 @@ function InboundOrdersView() {
             </select>
           </Field>
           <Field label="仓库">
-            <select className={selectClass} value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
-              <option value="">全部</option>
-              {warehouses.data?.items.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
-            </select>
+            <ReferencePicker resource="warehouses" value={warehouseId || null} onChange={(value) => { setWarehouseId(value ?? ''); setPage(1) }} query={{ status: 'ENABLED', page: 1, pageSize: 10 }} placeholder="全部仓库" className="w-52" />
           </Field>
           <Button variant="outline" size="sm" onClick={() => query.refetch()} data-testid="inbound-query">查询</Button>
           <Button variant="ghost" size="sm" onClick={() => { setOrderNo(''); setType(''); setStatus(''); setWarehouseId('') }}>重置</Button>
@@ -319,21 +342,27 @@ function InboundOrdersView() {
           ))}
         </tbody>
       </SimpleTable>
+      <PageControls page={page} total={query.data?.total ?? 0} pageSize={20} onPageChange={setPage} />
     </div>
   )
 }
 
 function NewInboundOrderPage({
-  draft, setDraft, onCreated,
+  draft, setDraft, onCreated, onCancel,
 }: {
   draft: NewOrderDraft
   setDraft: (draft: NewOrderDraft) => void
   onCreated: (order: InboundOrder) => void
+  onCancel: () => void
 }) {
-  const refs = useReferenceData()
+  const { getKey, clearKey } = useStableIdempotencyKey()
   const create = useMutation({
-    mutationFn: (body: InboundOrderCreateRequest) => apiCreateInboundOrder(body, crypto.randomUUID()),
-    onSuccess: (order) => {
+    mutationFn: (body: InboundOrderCreateRequest) => {
+      const fingerprint = `inbound-order:${JSON.stringify(body)}`
+      return apiCreateInboundOrder(body, getKey(fingerprint)).then((order) => ({ order, fingerprint }))
+    },
+    onSuccess: ({ order, fingerprint }) => {
+      clearKey(fingerprint)
       toast.success('入库单已创建')
       onCreated(order)
     },
@@ -341,12 +370,11 @@ function NewInboundOrderPage({
   })
 
   const sourceType = sourceTypeForOrder(draft.type)
-  const sources = refs.sources.data?.items.filter((s) => sourceType ? s.type === sourceType : true) ?? []
   const canSubmit = draft.warehouseId && draft.lines.every((l) => l.materialId && Number(l.expectedQty) > 0)
     && (draft.type === 'OT' || draft.sourceCode)
 
   const setType = (type: InboundOrderType) => {
-    setDraft({ ...draft, type, sourceCode: type === 'PO' ? 'SUP-001' : type === 'PR' ? 'WS-01' : '' })
+    setDraft({ ...draft, type, sourceId: '', sourceCode: '' })
   }
 
   return (
@@ -364,18 +392,23 @@ function NewInboundOrderPage({
           </select>
         </Field>
         <Field label="仓库">
-          <select className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm" value={draft.warehouseId} onChange={(e) => setDraft({ ...draft, warehouseId: e.target.value })}>
-            {refs.warehouses.data?.items.map((w) => <option key={w.id} value={w.id}>{w.code} {w.name}</option>)}
-          </select>
+          <ReferencePicker resource="warehouses" value={draft.warehouseId || null} onChange={(value) => setDraft({ ...draft, warehouseId: value ?? '' })} query={{ status: 'ENABLED', page: 1, pageSize: 10 }} placeholder="选择仓库" />
         </Field>
         <Field label="来源类型">
           <Input className="h-8" value={sourceType ? sourceTypeText(sourceType) : '可空'} readOnly />
         </Field>
         <Field label="来源">
-          <select className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm" value={draft.sourceCode} onChange={(e) => setDraft({ ...draft, sourceCode: e.target.value })}>
-            {draft.type === 'OT' && <option value="">不填写</option>}
-            {sources.map((s) => <option key={s.id} value={s.code}>{s.code} {s.name}</option>)}
-          </select>
+          <ReferencePicker
+            resource="sources"
+            value={draft.sourceId || null}
+            onChange={(value) => { if (!value) setDraft({ ...draft, sourceId: '', sourceCode: '' }) }}
+            onSelectItem={(item) => {
+              const selected = item as { id: string; code: string } | null
+              setDraft({ ...draft, sourceId: selected?.id ?? '', sourceCode: selected?.code ?? '' })
+            }}
+            query={{ status: 'ENABLED', ...(sourceType ? { type: sourceType } : {}), page: 1, pageSize: 10 }}
+            placeholder={draft.type === 'OT' ? '可不填写' : '选择来源'}
+          />
         </Field>
       </div>
       <div className="overflow-hidden rounded-lg border bg-card">
@@ -393,13 +426,7 @@ function NewInboundOrderPage({
               <tr key={index}>
                 <td className={tdClass}>{index + 1}</td>
                 <td className={tdClass}>
-                  <select
-                    className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm"
-                    value={line.materialId}
-                    onChange={(e) => updateDraftLine(draft, setDraft, index, { materialId: e.target.value })}
-                  >
-                    {refs.materials.data?.items.map((m) => <option key={m.id} value={m.id}>{m.code} {m.name}</option>)}
-                  </select>
+                  <ReferencePicker resource="materials" value={line.materialId || null} onChange={(value) => updateDraftLine(draft, setDraft, index, { materialId: value ?? '' })} query={{ status: 'ENABLED', page: 1, pageSize: 10 }} placeholder="选择物料" />
                 </td>
                 <td className={tdClass}>
                   <Input
@@ -427,12 +454,12 @@ function NewInboundOrderPage({
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setDraft({ ...draft, lines: [...draft.lines, { materialId: refs.materials.data?.items[0]?.id ?? '', expectedQty: '1.0000' }] })}
+          onClick={() => setDraft({ ...draft, lines: [...draft.lines, { materialId: '', expectedQty: '1.0000' }] })}
         >
           添加一行
         </Button>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => history.back()}>取消</Button>
+          <Button variant="outline" onClick={onCancel}>取消</Button>
           <Button disabled={!canSubmit || create.isPending} onClick={() => create.mutate(toCreateRequest(draft, sourceType))} data-testid="create-and-view">
             创建并查看
           </Button>
@@ -449,6 +476,7 @@ function InboundOrderDetailPage({ orderId, onLoaded }: { orderId: string; onLoad
   const [voidReason, setVoidReason] = useState('')
   const [printTarget, setPrintTarget] = useState<PrintTarget | null>(null)
   const [previewJob, setPreviewJob] = useState<PrintJob | null>(null)
+  const { getKey, clearKey } = useStableIdempotencyKey()
   const query = useQuery({ queryKey: ['inbound-order', orderId], queryFn: () => apiGetInboundOrder(orderId) })
   const order = query.data
 
@@ -457,8 +485,13 @@ function InboundOrderDetailPage({ orderId, onLoaded }: { orderId: string; onLoad
   }, [order, onLoaded])
 
   const voidMutation = useMutation({
-    mutationFn: () => apiVoidInboundOrder(orderId, { reason: voidReason }, crypto.randomUUID()),
-    onSuccess: (next) => {
+    mutationFn: () => {
+      const body = { reason: voidReason }
+      const fingerprint = `void-order:${orderId}:${JSON.stringify(body)}`
+      return apiVoidInboundOrder(orderId, body, getKey(fingerprint)).then((next) => ({ next, fingerprint }))
+    },
+    onSuccess: ({ next, fingerprint }) => {
+      clearKey(fingerprint)
       toast.success('入库单已作废')
       setVoidOpen(false)
       setVoidReason('')
@@ -468,8 +501,11 @@ function InboundOrderDetailPage({ orderId, onLoaded }: { orderId: string; onLoad
     onError: (e) => toast.error((e as Error).message),
   })
   const orderQr = useMutation({
-    mutationFn: () => apiPrintInboundOrderQr(orderId, crypto.randomUUID()),
-    onSuccess: setPreviewJob,
+    mutationFn: () => {
+      const fingerprint = `print-order:${orderId}`
+      return apiPrintInboundOrderQr(orderId, getKey(fingerprint)).then((job) => ({ job, fingerprint }))
+    },
+    onSuccess: ({ job, fingerprint }) => { clearKey(fingerprint); setPreviewJob(job) },
     onError: (e) => toast.error((e as Error).message),
   })
 
@@ -568,27 +604,33 @@ function PrintParamDialog({ target, onOpenChange, onPreview }: {
   const [count, setCount] = useState('1')
   const [qtyPerCode, setQtyPerCode] = useState('1')
   const [confirmDiff, setConfirmDiff] = useState(false)
+  const { getKey, clearKey } = useStableIdempotencyKey()
   const mutation = useMutation({
     mutationFn: async () => {
       if (!target) throw new Error('缺少打印上下文')
       if (target.kind === 'external') {
-        return apiPrintExternalLabels({
+        const body = {
           items: [{
             materialId: target.line.materialId,
             count: Number(count),
             inboundOrderLineId: target.line.id,
-            rt: target.order.sourceType === 'SUPPLIER' ? 'S' : target.order.sourceType === 'WORKSHOP' ? 'W' : undefined,
+            rt: target.order.sourceType === 'SUPPLIER' ? 'S' as const : target.order.sourceType === 'WORKSHOP' ? 'W' as const : undefined,
             rc: target.order.sourceCode ?? undefined,
           }],
-        }, crypto.randomUUID())
+        }
+        const fingerprint = `print-external:${JSON.stringify(body)}`
+        return apiPrintExternalLabels(body, getKey(fingerprint)).then((job) => ({ job, fingerprint }))
       }
-      return apiPrintUniqueLabels({
+      const body = {
         inboundOrderLineId: target.line.id,
         count: Number(count),
         qtyPerCode,
-      }, crypto.randomUUID())
+      }
+      const fingerprint = `print-unique:${JSON.stringify(body)}`
+      return apiPrintUniqueLabels(body, getKey(fingerprint)).then((job) => ({ job, fingerprint }))
     },
-    onSuccess: (job) => {
+    onSuccess: ({ job, fingerprint }) => {
+      clearKey(fingerprint)
       onPreview(job)
       onOpenChange(false)
     },
@@ -660,10 +702,10 @@ function ReceiptsView() {
   const [warehouseId, setWarehouseId] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [previewJob, setPreviewJob] = useState<PrintJob | null>(null)
-  const refs = useReferenceData()
+  const [page, setPage] = useState(1)
   const query = useQuery({
-    queryKey: ['receipts', receiptNo, status, warehouseId],
-    queryFn: () => apiListReceipts({ receiptNo, status, warehouseId, page: 1, pageSize: 20 }),
+    queryKey: ['receipts', receiptNo, status, warehouseId, page],
+    queryFn: () => apiListReceipts({ receiptNo, status, warehouseId, page, pageSize: 20 }),
   })
   const detail = useQuery({ queryKey: ['receipt', selectedId], queryFn: () => apiGetReceipt(selectedId!), enabled: !!selectedId })
 
@@ -681,10 +723,7 @@ function ReceiptsView() {
           </select>
         </Field>
         <Field label="仓库">
-          <select className={selectClass} value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
-            <option value="">全部</option>
-            {refs.warehouses.data?.items.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
-          </select>
+          <ReferencePicker resource="warehouses" value={warehouseId || null} onChange={(value) => { setWarehouseId(value ?? ''); setPage(1) }} query={{ status: 'ENABLED', page: 1, pageSize: 10 }} placeholder="全部仓库" className="w-52" />
         </Field>
         <Button variant="outline" size="sm" onClick={() => query.refetch()}>查询</Button>
       </div>
@@ -718,6 +757,7 @@ function ReceiptsView() {
           ))}
         </tbody>
       </SimpleTable>
+      <PageControls page={page} total={query.data?.total ?? 0} pageSize={20} onPageChange={setPage} />
       {detail.data && (
         <ReceiptDetail receipt={detail.data} canPrint={hasPerm('action.print.create')} onPreview={setPreviewJob} />
       )}
@@ -727,14 +767,22 @@ function ReceiptsView() {
 }
 
 function ReceiptDetail({ receipt, canPrint, onPreview }: { receipt: Receipt; canPrint: boolean; onPreview: (job: PrintJob) => void }) {
+  const { getKey, clearKey } = useStableIdempotencyKey()
   const printReceipt = useMutation({
-    mutationFn: () => apiPrintReceipt(receipt.id, crypto.randomUUID()),
-    onSuccess: onPreview,
+    mutationFn: () => {
+      const fingerprint = `print-receipt:${receipt.id}`
+      return apiPrintReceipt(receipt.id, getKey(fingerprint)).then((job) => ({ job, fingerprint }))
+    },
+    onSuccess: ({ job, fingerprint }) => { clearKey(fingerprint); onPreview(job) },
     onError: (e) => toast.error((e as Error).message),
   })
   const printBatch = useMutation({
-    mutationFn: (line: ReceiptLine) => apiPrintBatchLabels({ receiptLineId: line.id }, crypto.randomUUID()),
-    onSuccess: onPreview,
+    mutationFn: (line: ReceiptLine) => {
+      const body = { receiptLineId: line.id }
+      const fingerprint = `print-batch:${JSON.stringify(body)}`
+      return apiPrintBatchLabels(body, getKey(fingerprint)).then((job) => ({ job, fingerprint }))
+    },
+    onSuccess: ({ job, fingerprint }) => { clearKey(fingerprint); onPreview(job) },
     onError: (e) => toast.error((e as Error).message),
   })
   return (
@@ -779,8 +827,8 @@ function ReceiptDetail({ receipt, canPrint, onPreview }: { receipt: Receipt; can
         ) : (
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
             {receipt.photos.map((id) => (
-              <a key={id} href={`/api/attachments/${id}`} className="flex aspect-square items-center justify-center rounded-lg border bg-muted/30 text-muted-foreground">
-                <ImageIcon className="size-5" data-icon />
+              <a key={id} href={`/api/attachments/${id}`} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-lg border bg-muted/30">
+                <img src={`/api/attachments/${id}/thumbnail`} alt={`收货附件 ${id}`} className="size-full object-cover" />
               </a>
             ))}
           </div>
@@ -793,19 +841,26 @@ function ReceiptDetail({ receipt, canPrint, onPreview }: { receipt: Receipt; can
 function QualityExceptionsView() {
   const { hasPerm } = useAuth()
   const qc = useQueryClient()
-  const refs = useReferenceData()
   const [status, setStatus] = useState('PENDING')
   const [warehouseId, setWarehouseId] = useState('')
   const [reason, setReason] = useState('')
+  const [page, setPage] = useState(1)
+  const [detail, setDetail] = useState<QualityExceptionItem | null>(null)
   const [resolveTarget, setResolveTarget] = useState<{ item: QualityExceptionItem; action: QualityResolutionAction } | null>(null)
   const [note, setNote] = useState('')
+  const { getKey, clearKey } = useStableIdempotencyKey()
   const query = useQuery({
-    queryKey: ['quality-exceptions', status, warehouseId, reason],
-    queryFn: () => apiListQualityExceptions({ resolutionStatus: status, warehouseId, exceptionReason: reason, page: 1, pageSize: 20 }),
+    queryKey: ['quality-exceptions', status, warehouseId, reason, page],
+    queryFn: () => apiListQualityExceptions({ resolutionStatus: status, warehouseId, exceptionReason: reason, page, pageSize: 20 }),
   })
   const resolveMutation = useMutation({
-    mutationFn: () => apiResolveQualityException(resolveTarget!.item.id, { action: resolveTarget!.action, note }, crypto.randomUUID()),
-    onSuccess: () => {
+    mutationFn: () => {
+      const body = { action: resolveTarget!.action, note }
+      const fingerprint = `resolve-quality:${resolveTarget!.item.id}:${JSON.stringify(body)}`
+      return apiResolveQualityException(resolveTarget!.item.id, body, getKey(fingerprint)).then(() => fingerprint)
+    },
+    onSuccess: (fingerprint) => {
+      clearKey(fingerprint)
       toast.success('异常已处理')
       setResolveTarget(null)
       setNote('')
@@ -824,10 +879,7 @@ function QualityExceptionsView() {
           </select>
         </Field>
         <Field label="仓库">
-          <select className={selectClass} value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
-            <option value="">全部</option>
-            {refs.warehouses.data?.items.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
-          </select>
+          <ReferencePicker resource="warehouses" value={warehouseId || null} onChange={(value) => { setWarehouseId(value ?? ''); setPage(1) }} query={{ status: 'ENABLED', page: 1, pageSize: 10 }} placeholder="全部仓库" className="w-52" />
         </Field>
         <Field label="原因">
           <select className={selectClass} value={reason} onChange={(e) => setReason(e.target.value)}>
@@ -863,17 +915,22 @@ function QualityExceptionsView() {
               <td className={tdClass}>{item.checkedByName}<br /><span className="tabular-nums text-muted-foreground">{item.checkedAt.slice(0, 16).replace('T', ' ')}</span></td>
               <td className={tdClass}>{resolutionText(item.resolutionAction)}</td>
               <td className={`${tdClass} text-right`}>
-                {hasPerm('action.quality.resolve') && !item.resolutionAction && (
-                  <div className="flex justify-end gap-1">
+                <div className="flex justify-end gap-1">
+                  <Button variant="ghost" size="icon-sm" title="查看详情" aria-label="查看异常详情" onClick={() => setDetail(item)}><Eye className="size-4" data-icon /></Button>
+                  {hasPerm('action.quality.resolve') && !item.resolutionAction && (
+                    <>
                     <Button variant="ghost" size="sm" onClick={() => setResolveTarget({ item, action: 'PASS' })}>放行</Button>
                     <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setResolveTarget({ item, action: 'REJECT' })}>驳回</Button>
-                  </div>
-                )}
+                    </>
+                  )}
+                </div>
               </td>
             </tr>
           ))}
         </tbody>
       </SimpleTable>
+      <PageControls page={page} total={query.data?.total ?? 0} pageSize={20} onPageChange={setPage} />
+      <ExceptionDetailDialog item={detail} onOpenChange={(open) => { if (!open) setDetail(null) }} />
       <AlertDialog open={!!resolveTarget} onOpenChange={(open) => !open && setResolveTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -900,9 +957,13 @@ function QualityExceptionsView() {
 
 function PrintPreviewDialog({ job, onOpenChange }: { job: PrintJob | null; onOpenChange: (open: boolean) => void }) {
   const [currentJob, setCurrentJob] = useState<PrintJob | null>(job)
+  const { getKey, clearKey } = useStableIdempotencyKey()
   const retry = useMutation({
-    mutationFn: () => apiRetryPrintJob(currentJob!.id, crypto.randomUUID()),
-    onSuccess: setCurrentJob,
+    mutationFn: () => {
+      const fingerprint = `retry-print:${currentJob!.id}`
+      return apiRetryPrintJob(currentJob!.id, getKey(fingerprint)).then((next) => ({ next, fingerprint }))
+    },
+    onSuccess: ({ next, fingerprint }) => { clearKey(fingerprint); setCurrentJob(next) },
     onError: (e) => toast.error((e as Error).message),
   })
 
@@ -922,12 +983,7 @@ function PrintPreviewDialog({ job, onOpenChange }: { job: PrintJob | null; onOpe
               {currentJob.errorCode && <span className="text-destructive">{currentJob.errorCode}</span>}
             </div>
             <div className="grid max-h-96 gap-2 overflow-auto sm:grid-cols-2">
-              {currentJob.items.map((item, index) => (
-                <div key={`${item.content}-${index}`} className="rounded-lg border bg-muted/30 p-3">
-                  <div className="mb-2 flex size-24 items-center justify-center rounded-lg border bg-background text-xs text-muted-foreground">QR</div>
-                  <pre className="whitespace-pre-wrap text-xs">{item.readableText}</pre>
-                </div>
-              ))}
+              <PrintJobItems items={currentJob.items} />
             </div>
           </div>
         )}
@@ -943,6 +999,59 @@ function PrintPreviewDialog({ job, onOpenChange }: { job: PrintJob | null; onOpe
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function ExceptionDetailDialog({ item, onOpenChange }: { item: QualityExceptionItem | null; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={!!item} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader><DialogTitle>质检异常详情</DialogTitle></DialogHeader>
+        {item && (
+          <div className="space-y-3 text-sm">
+            <div className="grid grid-cols-2 gap-2">
+              <p><span className="text-muted-foreground">收货单：</span>{item.receiptNo}</p>
+              <p><span className="text-muted-foreground">仓库：</span>{item.warehouseCode}</p>
+              <p><span className="text-muted-foreground">物料：</span>{item.materialCode} {item.materialName}</p>
+              <p><span className="text-muted-foreground">批次：</span>{item.batchNo}</p>
+              <p><span className="text-muted-foreground">异常数量：</span>{qtyText(item.checkedQty)}</p>
+              <p><span className="text-muted-foreground">原因：</span>{qualityReasonText(item.exceptionReason)}</p>
+            </div>
+            <div><p className="text-muted-foreground">上报备注</p><p className="whitespace-pre-wrap">{item.note || '无'}</p></div>
+            <div>
+              <p className="mb-2 text-muted-foreground">异常照片</p>
+              {item.photoIds.length === 0 ? <p>无</p> : (
+                <div className="grid grid-cols-3 gap-2">
+                  {item.photoIds.map((id) => (
+                    <a key={id} href={`/api/attachments/${id}`} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded border">
+                      <img src={`/api/attachments/${id}/thumbnail`} alt={`异常附件 ${id}`} className="size-full object-cover" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+            {item.resolutionAction && (
+              <div className="border-t pt-3">
+                <p>{resolutionText(item.resolutionAction)} · {item.resolvedByName ?? '-'}</p>
+                <p className="whitespace-pre-wrap text-muted-foreground">{item.resolutionNote || '无处理备注'}</p>
+              </div>
+            )}
+          </div>
+        )}
+        <DialogFooter><Button onClick={() => onOpenChange(false)}>关闭</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function PageControls({ page, total, pageSize, onPageChange }: { page: number; total: number; pageSize: number; onPageChange: (page: number) => void }) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize))
+  return (
+    <div className="flex items-center justify-end gap-2 text-sm text-muted-foreground">
+      <span>第 {page} / {pageCount} 页，共 {total} 条</span>
+      <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>上一页</Button>
+      <Button size="sm" variant="outline" disabled={page >= pageCount} onClick={() => onPageChange(page + 1)}>下一页</Button>
+    </div>
   )
 }
 
@@ -981,13 +1090,6 @@ function ErrorBlock({ message, onRetry }: { message: string; onRetry: () => void
       <Button variant="outline" size="sm" onClick={onRetry}>重试</Button>
     </div>
   )
-}
-
-function useReferenceData() {
-  const warehouses = useQuery({ queryKey: ['ref-warehouses-all'], queryFn: () => apiQuickSearchWarehouses('', 100) })
-  const materials = useQuery({ queryKey: ['ref-materials-all'], queryFn: () => apiQuickSearchMaterials('', 100) })
-  const sources = useQuery({ queryKey: ['ref-sources-all'], queryFn: () => apiQuickSearchSources('', 100) })
-  return { warehouses, materials, sources }
 }
 
 function sourceTypeForOrder(type: InboundOrderType): SourceType | null {

@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { AuthProvider, useAuth } from '@/platform/auth/auth-context'
-import { RequireAuth, RequireInboundRoute, RequirePermission, WEB_ROUTES, menuTarget } from '@/platform/route-registry'
+import { RequireAuth, RequireInboundRoute, RequirePdaAction, RequirePermission, WEB_ROUTES, menuTarget } from '@/platform/route-registry'
 import { AppLayout } from '@/modules/web/layout/AppLayout'
 import { LoginPage } from '@/modules/web/login/LoginPage'
 import { ModulePlaceholderPage } from '@/modules/web/ModulePlaceholderPage'
@@ -82,14 +82,10 @@ export function AppRoutes() {
       </Route>
 
       {/* PDA 作业端（双路由树预留） */}
-      <Route
-        path="/pda/*"
-        element={
-          <RequireAuth>
-            <PdaHomePage />
-          </RequireAuth>
-        }
-      />
+      <Route path="/pda" element={<RequireAuth><PdaHomePage /></RequireAuth>} />
+      <Route path="/pda/receiving" element={<RequireAuth><RequirePdaAction action="action.receiving.create"><PdaHomePage /></RequirePdaAction></RequireAuth>} />
+      <Route path="/pda/qc" element={<RequireAuth><RequirePdaAction action="action.quality.check"><PdaHomePage /></RequirePdaAction></RequireAuth>} />
+      <Route path="/pda/putaway" element={<RequireAuth><RequirePdaAction action="action.putaway.create"><PdaHomePage /></RequirePdaAction></RequireAuth>} />
 
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

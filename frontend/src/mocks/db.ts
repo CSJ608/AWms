@@ -7,7 +7,7 @@ import type {
 } from '../api/types'
 import { ApiErrorImpl } from '../api/client'
 import {
-  seedAttachments, seedBatches, seedInboundOrders, seedLocations, seedMaterials, seedPrintJobs,
+  MOCK_IDS, seedAttachments, seedBatches, seedInboundOrders, seedLocations, seedMaterials, seedPrintJobs,
   seedQualityChecks, seedReceipts, seedSources, seedUsers, seedWarehouses,
 } from './seed'
 
@@ -37,7 +37,7 @@ export function createDb(): MockDb {
     qualityChecks: structuredClone(seedQualityChecks),
     attachments: structuredClone(seedAttachments),
     printJobs: structuredClone(seedPrintJobs),
-    putawayVersions: { 'rl-002': 3 },
+    putawayVersions: { [MOCK_IDS.receiptLine2]: 3 },
   }
 }
 
@@ -161,8 +161,8 @@ export function getById<T>(rows: T[], id: string): T | undefined {
   return (rows as Row[]).find((r) => r.id === id) as T | undefined
 }
 
-export function newId(prefix: string): string {
-  return `${prefix}-${crypto.randomUUID().slice(0, 8)}`
+export function newId(_prefix?: string): string {
+  return crypto.randomUUID()
 }
 
 export const nowIso = () => new Date().toISOString()

@@ -17,7 +17,6 @@ const idempotencyStore = new Map<string, IdempotencyEntry>()
 let orderSeq = 3
 let receiptSeq = 4
 let batchSeq = 100
-let printSeq = 1
 let uniqueSeq = 10
 
 export function resetInboundMockState(): void {
@@ -25,7 +24,6 @@ export function resetInboundMockState(): void {
   orderSeq = 3
   receiptSeq = 4
   batchSeq = 100
-  printSeq = 1
   uniqueSeq = 10
 }
 
@@ -333,15 +331,15 @@ function printJob(
   user: { userId: string; userName: string },
   failed = false,
 ): PrintJob {
-  printSeq += 1
+  const id = newId('print-job')
   const job: PrintJob = {
-    id: `pj-${String(printSeq).padStart(3, '0')}`,
+    id,
     bizType: ctx.bizType,
     bizId: ctx.bizId,
     templateCode,
     status: failed ? 'FAILED' : 'READY',
     items,
-    fileUrl: failed ? null : `/api/print/jobs/pj-${String(printSeq).padStart(3, '0')}/file`,
+    fileUrl: failed ? null : `/api/print/jobs/${id}/file`,
     errorCode: failed ? 'PRINT_GENERATION_FAILED' : null,
     createdBy: user.userId,
     createdByName: user.userName,
@@ -351,6 +349,48 @@ function printJob(
   db.printJobs.push(job)
   return job
 }
+
+function externalScan(content: string): ScanResult | null {
+  const materialCode = /^MAT-\d{3}$/.test(content) ? content : null
+  const ean = /^\d{13}$/.test(content) ? content : null
+  const gs1 = Object.fromEntries([...content.matchAll(/\((01|10|11|15|30)\)([^()]+)/g)].map((match) => [match[1], match[2]]))
+  const isGs1 = Object.keys(gs1).length > 0
+  const material = materialCode
+    ? materialByCode(materialCode)
+    : ean === '6901234567892' || gs1['01'] === '06901234567892'
+      ? materialByCode('MAT-001')
+      : null
+  if (!material) return null
+  const result = emptyScan('EXTERNAL_BARCODE', null)
+  result.material = scanMaterial(material.id)
+  result.quantity = isGs1 && gs1['30'] ? dec(Number(gs1['30'])) : material.defaultQtyPerLabel
+  result.batchProps = isGs1 ? {
+    sourceBatchNo: gs1['10'] ?? null,
+    productionDate: gs1Date(gs1['11']),
+    expiryDate: gs1Date(gs1['15']),
+    sourceType: null,
+    sourceCode: null,
+  } : null
+  result.external = {
+    code: content,
+    format: isGs1 ? 'GS1' : ean ? 'EAN_13' : 'CODE_128',
+    parsed: isGs1 ? gs1 : ean ? { gtin: ean } : { materialCode: material.code },
+  }
+  return result
+}
+
+function gs1Date(value?: string): string | null {
+  if (!value || !/^\d{6}$/.test(value)) return null
+  return `20${value.slice(0, 2)}-${value.slice(2, 4)}-${value.slice(4, 6)}`
+}
+
+const SAMPLE_PNG = new Uint8Array([
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
+  0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137,
+  0, 0, 0, 13, 73, 68, 65, 84, 8, 215, 99, 248, 207, 192, 240, 31,
+  0, 5, 0, 1, 255, 137, 153, 61, 29, 0, 0, 0, 0, 73, 69, 78, 68,
+  174, 66, 96, 130,
+])
 
 function splitQuantities(totalQty: string, qtyPerLabel: string): string[] {
   const total = num(totalQty)
@@ -463,7 +503,8 @@ export const inboundHandlers = [
     if (isResponse(auth)) return auth
     const body = (await request.json()) as ScanParseRequest
     if (!body.content.startsWith('AWMS1:')) {
-      return ok({ ...emptyScan('UNKNOWN', null), message: '未识别，请手动输入' })
+      const external = externalScan(body.content)
+      return ok(external ?? { ...emptyScan('UNKNOWN', null), message: '未识别，请手动输入' })
     }
     let payload: Record<string, unknown>
     try {
@@ -882,7 +923,7 @@ export const inboundHandlers = [
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
     if (!getById(db.attachments, String(params.id))) return fail('ATTACHMENT_NOT_FOUND', '附件不存在', 404)
-    return new HttpResponse(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'Content-Type': 'image/jpeg' } })
+    return new HttpResponse(SAMPLE_PNG, { status: 200, headers: { 'Content-Type': 'image/png' } })
   }),
 
   http.get('/api/attachments/:id/thumbnail', async ({ request, params }) => {
@@ -890,7 +931,7 @@ export const inboundHandlers = [
     const auth = requireAuth(request)
     if (isResponse(auth)) return auth
     if (!getById(db.attachments, String(params.id))) return fail('ATTACHMENT_NOT_FOUND', '附件不存在', 404)
-    return new HttpResponse(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'Content-Type': 'image/jpeg' } })
+    return new HttpResponse(SAMPLE_PNG, { status: 200, headers: { 'Content-Type': 'image/png' } })
   }),
 
   http.delete('/api/attachments/:id', async ({ request, params }) => {

@@ -29,6 +29,8 @@ export interface ReferencePickerProps {
   resource: string
   value: string | null | undefined
   onChange: (value: string | null) => void
+  query?: ListQuery
+  onSelectItem?: (item: unknown | null) => void
   disabled?: boolean
   placeholder?: string
   className?: string
@@ -37,6 +39,7 @@ export interface ReferencePickerProps {
 interface Candidate {
   id: string
   label: string
+  raw: unknown
 }
 
 const RESOURCE_TITLE_KEYS: Record<string, string> = {
@@ -47,7 +50,7 @@ const RESOURCE_TITLE_KEYS: Record<string, string> = {
 }
 
 export function ReferencePicker({
-  resource, value, onChange, disabled, placeholder, className,
+  resource, value, onChange, query, onSelectItem, disabled, placeholder, className,
 }: ReferencePickerProps) {
   const { t } = useTranslation()
   const config = REF_RESOURCES[resource]
@@ -58,6 +61,7 @@ export function ReferencePicker({
   const [searching, setSearching] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [labelCache, setLabelCache] = useState<Record<string, string>>({})
+  const scopedQueryKey = JSON.stringify(query ?? {})
 
   const labelQuery = useQuery({
     queryKey: ['ref-label', resource, value],
@@ -81,8 +85,10 @@ export function ReferencePicker({
     setSearching(true)
     debounceRef.current = setTimeout(async () => {
       try {
-        const items = await config.quickSearch(keyword.trim())
-        const mapped = items.map((i) => ({ id: (i as { id: string }).id, label: config.display(i) }))
+        const items = query
+          ? (await config.listQuery({ ...query, keyword: keyword.trim(), page: 1, pageSize: 10 })).items
+          : await config.quickSearch(keyword.trim())
+        const mapped = items.map((i) => ({ id: (i as { id: string }).id, label: config.display(i), raw: i }))
         setCandidates(mapped)
         setLabelCache((prev) => {
           const next = { ...prev }
@@ -97,11 +103,12 @@ export function ReferencePicker({
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, keyword])
+  }, [open, keyword, scopedQueryKey])
 
-  const pick = (id: string, label: string) => {
+  const pick = (id: string, label: string, raw: unknown) => {
     setLabelCache((prev) => ({ ...prev, [id]: label }))
     onChange(id)
+    onSelectItem?.(raw)
     setOpen(false)
     setDialogOpen(false)
   }
@@ -131,6 +138,7 @@ export function ReferencePicker({
                   onClick={(e) => {
                     e.stopPropagation()
                     onChange(null)
+                    onSelectItem?.(null)
                   }}
                   aria-label={t('common.reset')}
                 />
@@ -165,7 +173,7 @@ export function ReferencePicker({
                     key={c.id}
                     type="button"
                     className="w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
-                    onClick={() => pick(c.id, c.label)}
+                    onClick={() => pick(c.id, c.label, c.raw)}
                   >
                     {c.label}
                   </button>
@@ -189,6 +197,7 @@ export function ReferencePicker({
 
       <RefPickerDialog
         resource={resource}
+        scopedQuery={query}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onPick={pick}
@@ -200,18 +209,26 @@ export function ReferencePicker({
 
 /** 完整选择弹窗：标准列表（分页 + SearchField 筛选） */
 function RefPickerDialog({
-  resource, open, onOpenChange, onPick, onCacheLabels,
+  resource, scopedQuery, open, onOpenChange, onPick, onCacheLabels,
 }: {
   resource: string
+  scopedQuery?: ListQuery
   open: boolean
   onOpenChange: (o: boolean) => void
-  onPick: (id: string, label: string) => void
+  onPick: (id: string, label: string, raw: unknown) => void
   onCacheLabels: (labels: Record<string, string>) => void
 }) {
   const { t } = useTranslation()
   const config = REF_RESOURCES[resource]
-  const [query, setQuery] = useState<ListQuery>({ page: 1, pageSize: 10 })
+  const [query, setQuery] = useState<ListQuery>({ ...scopedQuery, page: 1, pageSize: 10 })
   const [sort, setSort] = useState<SortSpec[]>([])
+  const scopedQueryKey = JSON.stringify(scopedQuery ?? {})
+
+  useEffect(() => {
+    setQuery({ ...scopedQuery, page: 1, pageSize: 10 })
+    // query 对象常由页面内联创建，仅以稳定序列化值判断范围是否变化。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedQueryKey])
 
   const metaQuery = useQuery({
     queryKey: ['meta', resource],
@@ -237,11 +254,11 @@ function RefPickerDialog({
   }
 
   const rows = useMemo(
-    () => (listQuery.data?.items ?? []).map((i) => ({ id: (i as { id: string }).id, label: config.display(i) })),
+    () => (listQuery.data?.items ?? []).map((i) => ({ id: (i as { id: string }).id, label: config.display(i), raw: i })),
     [listQuery.data, config],
   )
 
-  interface PickerRow { id: string; label: string }
+  interface PickerRow { id: string; label: string; raw: unknown }
 
   const columns = useMemo<ColumnDef<PickerRow>[]>(() => [
     textColumn<PickerRow>('label', t(`nav.${resource === 'materials' ? 'material' : resource === 'warehouses' ? 'warehouse' : resource === 'sources' ? 'source' : 'batch'}`) as string),
@@ -253,7 +270,7 @@ function RefPickerDialog({
         <Button
           size="sm"
           variant="outline"
-          onClick={() => onPick(row.original.id, row.original.label)}
+          onClick={() => onPick(row.original.id, row.original.label, row.original.raw)}
           data-testid="ref-pick-row"
         >
           {t('common.confirm')}
@@ -273,7 +290,7 @@ function RefPickerDialog({
           fields={fields}
           commonFields={commonFields}
           onSearch={handleSearch}
-          onReset={() => setQuery({ page: 1, pageSize: 10 })}
+          onReset={() => setQuery({ ...scopedQuery, page: 1, pageSize: 10 })}
         />
         <DataTable
           columns={columns}
