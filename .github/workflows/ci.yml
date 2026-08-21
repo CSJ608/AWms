@@ -48,6 +48,8 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install
         run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: node node_modules/playwright/cli.js install --with-deps chromium
       - name: Lint
         run: pnpm lint
       - name: Build

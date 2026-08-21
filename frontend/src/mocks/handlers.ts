@@ -14,8 +14,9 @@ import {
 import type { QueryOptions } from './db'
 import { RESOURCE_DEFAULT_SORT, RESOURCE_FIXED_PARAMS, RESOURCE_KEYWORD_FIELDS, RESOURCE_META } from './meta'
 import {
-  MOCK_EXPIRED_TOKEN, MOCK_TOKEN_PREFIX, SEED_PASSWORDS, menusFor, permissionsOf, seedPermissions,
+  MOCK_EXPIRED_TOKEN, MOCK_IDS, MOCK_TOKEN_PREFIX, SEED_PASSWORDS, menusFor, permissionsOf, seedPermissions,
 } from './seed'
+import { inboundHandlers } from './inbound-handlers'
 
 // ── mock 状态（测试可控）───────────────────────────────
 export const mockState = {
@@ -141,6 +142,7 @@ function makeTaskNo(): string {
 // ── handlers ──────────────────────────────────────────
 
 export const handlers = [
+  ...inboundHandlers,
   // 认证
   http.post('/api/auth/login', async ({ request }) => {
     await mockDelay()
@@ -563,7 +565,7 @@ export const handlers = [
       failures,
       failReportUrl: failures && failures.length > 200 ? `/api/import-export/tasks/${taskId}/fail-report` : null,
       fileUrl: null,
-      operatorId: 'u-admin',
+      operatorId: MOCK_IDS.userAdmin,
       operatorName: '系统管理员',
       createdAt: nowIso(),
     }
@@ -607,7 +609,7 @@ export const handlers = [
       failures: undefined,
       failReportUrl: null,
       fileUrl: `/api/import-export/tasks/${taskId}/file`,
-      operatorId: 'u-admin',
+      operatorId: MOCK_IDS.userAdmin,
       operatorName: '系统管理员',
       createdAt: nowIso(),
     }

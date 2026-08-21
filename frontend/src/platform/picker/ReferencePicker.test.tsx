@@ -9,6 +9,7 @@ import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { ReferencePicker } from './ReferencePicker'
 import { makeAdminSession, seedSession } from '@/test/utils'
+import { MOCK_IDS } from '@/mocks/seed'
 
 function Harness() {
   const [value, setValue] = useState<string | null>(null)
@@ -40,7 +41,7 @@ describe('ReferencePicker', () => {
     await screen.findByText('MAT-001 螺母 M6')
 
     fireEvent.click(screen.getByText('MAT-001 螺母 M6'))
-    expect(screen.getByTestId('picked').textContent).toBe('mat-001')
+    expect(screen.getByTestId('picked').textContent).toBe(MOCK_IDS.material1)
     // 选中后按钮回显展示文案
     expect(screen.getByTestId('ref-picker-materials')).toHaveTextContent('MAT-001 螺母 M6')
   })
@@ -65,7 +66,7 @@ describe('ReferencePicker', () => {
     await screen.findByText('MAT-001 螺母 M6')
     fireEvent.click(screen.getByText('MAT-001 螺母 M6'))
 
-    expect(screen.getByTestId('picked').textContent).toBe('mat-001')
+    expect(screen.getByTestId('picked').textContent).toBe(MOCK_IDS.material1)
     fireEvent.click(screen.getByLabelText('重置'))
     expect(screen.getByTestId('picked').textContent).toBe('none')
   })

@@ -6,6 +6,7 @@ import { cleanup } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from 'vitest'
 import { createDb, db } from '../mocks/db'
 import { resetImportTasks, resetMockState } from '../mocks/handlers'
+import { resetInboundMockState } from '../mocks/inbound-handlers'
 import { server } from '../mocks/server'
 import '../i18n'
 
@@ -36,6 +37,7 @@ afterEach(() => {
   server.resetHandlers()
   resetMockState()
   resetImportTasks()
+  resetInboundMockState()
   // Node 26 实验性全局 localStorage 遮蔽 jsdom 版 → 一律 window.localStorage（评审 F-R1）
   window.localStorage?.clear()
   cleanup()
