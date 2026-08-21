@@ -88,6 +88,105 @@ public class InboundReceiptChainApiTests : IClassFixture<ApiTestFixture>
     }
 
     [Fact]
+    public async Task 质检成功_返回200统一Envelope和完整ReceiptDto()
+    {
+        await _fixture.ResetDatabaseAsync();
+        await LoginAdminAsync();
+        var seed = await SeedAsync(batchControlled: true, labelType: LabelType.SKU);
+        var order = await CreatePoOrderAsync(seed, "6.0000", "contract-qc-order");
+        var receipt = await SubmitReceiptAsync(
+            seed,
+            order.Id,
+            order.Lines.Single().Id,
+            "6.0000",
+            new BatchPropsRequest("CONTRACT-QC", null, null, null, null),
+            "contract-qc-receipt");
+
+        using var response = await SendJsonRawAsync(
+            HttpMethod.Post,
+            $"/api/receipt-lines/{receipt.Lines.Single().Id}/quality-check",
+            new QualityCheckRequest("PASS", "6.0000", null, null, null),
+            "contract-qc");
+
+        await AssertReceiptEnvelopeAsync(response, HttpStatusCode.OK, receipt.Id, "PUTAWAY", "CHECKED");
+    }
+
+    [Fact]
+    public async Task 异常处理成功_返回200统一Envelope和完整ReceiptDto()
+    {
+        await _fixture.ResetDatabaseAsync();
+        await LoginAdminAsync();
+        var seed = await SeedAsync(batchControlled: true, labelType: LabelType.SKU);
+        var order = await CreatePoOrderAsync(seed, "7.0000", "contract-resolve-order");
+        var receipt = await SubmitReceiptAsync(
+            seed,
+            order.Id,
+            order.Lines.Single().Id,
+            "7.0000",
+            new BatchPropsRequest("CONTRACT-RESOLVE", null, null, null, null),
+            "contract-resolve-receipt");
+        var photo = await UploadPhotoAsync();
+        await SendJsonAsync<ReceiptItem>(
+            HttpMethod.Post,
+            $"/api/receipt-lines/{receipt.Lines.Single().Id}/quality-check",
+            new QualityCheckRequest("EXCEPTION", "7.0000", "DAMAGED", "外箱破损", new[] { photo.Id }),
+            "contract-resolve-qc");
+
+        Guid checkId;
+        using (var scope = _fixture.Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AWmsDbContext>();
+            checkId = await db.QualityChecks
+                .Where(x => x.ReceiptLineId == receipt.Lines.Single().Id)
+                .Select(x => x.Id)
+                .SingleAsync();
+        }
+
+        using var response = await SendJsonRawAsync(
+            HttpMethod.Post,
+            $"/api/quality-checks/{checkId}/resolve",
+            new ResolveQualityCheckRequest("PASS", null),
+            "contract-resolve");
+
+        await AssertReceiptEnvelopeAsync(response, HttpStatusCode.OK, receipt.Id, "PUTAWAY", "CHECKED");
+    }
+
+    [Fact]
+    public async Task 上架成功_返回201统一Envelope和完整ReceiptDto()
+    {
+        await _fixture.ResetDatabaseAsync();
+        await LoginAdminAsync();
+        var seed = await SeedAsync(batchControlled: true, labelType: LabelType.SKU);
+        var order = await CreatePoOrderAsync(seed, "8.0000", "contract-putaway-order");
+        var receipt = await SubmitReceiptAsync(
+            seed,
+            order.Id,
+            order.Lines.Single().Id,
+            "8.0000",
+            new BatchPropsRequest("CONTRACT-PUTAWAY", null, null, null, null),
+            "contract-putaway-receipt");
+        await SendJsonAsync<ReceiptItem>(
+            HttpMethod.Post,
+            $"/api/receipt-lines/{receipt.Lines.Single().Id}/quality-check",
+            new QualityCheckRequest("PASS", "8.0000", null, null, null),
+            "contract-putaway-qc");
+        using var todoResponse = await _client.PostAsJsonAsync(
+            "/api/putaway-todos/search",
+            new PutawayTodoSearchRequest(seed.WarehouseId, null, null, null, 1, 20));
+        todoResponse.EnsureSuccessStatusCode();
+        var todoEnvelope = await todoResponse.Content.ReadFromJsonAsync<ApiResponse<PagedResult<PutawayTodoItem>>>(JsonOpts);
+        var todo = Assert.Single(todoEnvelope!.Data!.Items);
+
+        using var response = await SendJsonRawAsync(
+            HttpMethod.Post,
+            "/api/putaway-records",
+            new CreatePutawayRecordRequest(todo.ReceiptLineId, seed.DefaultLocationId, seed.DefaultLocationCode, todo.InventoryVersion),
+            "contract-putaway");
+
+        await AssertReceiptEnvelopeAsync(response, HttpStatusCode.Created, receipt.Id, "DONE", "PUTAWAY_DONE");
+    }
+
+    [Fact]
     public async Task PO数量不一致_失败且无批次库存流水部分写入()
     {
         await _fixture.ResetDatabaseAsync();
@@ -366,6 +465,50 @@ public class InboundReceiptChainApiTests : IClassFixture<ApiTestFixture>
         var request = new HttpRequestMessage(method, path) { Content = JsonContent.Create(body) };
         request.Headers.Add("Idempotency-Key", idempotencyKey);
         return await _client.SendAsync(request);
+    }
+
+    private static async Task AssertReceiptEnvelopeAsync(
+        HttpResponseMessage response,
+        HttpStatusCode expectedStatus,
+        Guid expectedReceiptId,
+        string expectedReceiptStatus,
+        string expectedLineStatus)
+    {
+        Assert.Equal(expectedStatus, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        Assert.Equal("OK", root.GetProperty("code").GetString());
+        Assert.Equal("ok", root.GetProperty("message").GetString());
+        var data = root.GetProperty("data");
+        Assert.Equal(JsonValueKind.Object, data.ValueKind);
+        AssertJsonProperties(data,
+            "id", "receiptNo", "warehouseId", "warehouseCode", "inboundOrderId", "sourceDocType", "sourceDocNo",
+            "sourceType", "sourceCode", "status", "lines", "stagingLocationId", "stagingLocationCode", "photos",
+            "operatorId", "operatorName", "occurredAt");
+        var line = Assert.Single(data.GetProperty("lines").EnumerateArray());
+        AssertJsonProperties(line,
+            "id", "lineNo", "orderLineId", "orderLineNo", "materialId", "materialCode", "materialName", "batchId",
+            "batchNo", "expectedQty", "actualQty", "qtyDiff", "status", "sourceBatchNo", "productionDate", "expiryDate");
+
+        var envelope = JsonSerializer.Deserialize<ApiResponse<ReceiptItem>>(json, JsonOpts);
+        var receipt = Assert.IsType<ReceiptItem>(envelope!.Data);
+        Assert.Equal(expectedReceiptId, receipt.Id);
+        Assert.Equal(expectedReceiptStatus, receipt.Status);
+        Assert.Equal(expectedLineStatus, Assert.Single(receipt.Lines).Status);
+        Assert.NotEqual(Guid.Empty, receipt.WarehouseId);
+        Assert.NotEqual(Guid.Empty, receipt.StagingLocationId);
+        Assert.NotEqual(Guid.Empty, receipt.OperatorId);
+        Assert.False(string.IsNullOrWhiteSpace(receipt.ReceiptNo));
+        Assert.False(string.IsNullOrWhiteSpace(receipt.WarehouseCode));
+        Assert.False(string.IsNullOrWhiteSpace(receipt.StagingLocationCode));
+        Assert.False(string.IsNullOrWhiteSpace(receipt.OperatorName));
+    }
+
+    private static void AssertJsonProperties(JsonElement element, params string[] expected)
+    {
+        var actual = element.EnumerateObject().Select(x => x.Name).OrderBy(x => x).ToArray();
+        Assert.Equal(expected.OrderBy(x => x).ToArray(), actual);
     }
 
     private static async Task<decimal> InventoryQtyAsync(AWmsDbContext db, Guid locationId, StockSubjectStatus status)
