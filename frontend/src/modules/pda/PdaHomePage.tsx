@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertTriangle, ArrowLeft, Camera, CheckCircle2, ClipboardCheck, Plus, Printer, RotateCw, ScanLine, Trash2,
+  AlertTriangle, ArrowLeft, Camera, CheckCircle2, ClipboardCheck, PackagePlus, Plus, Printer, RotateCw, ScanLine, Trash2,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -24,16 +25,25 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { qtyText, statusBadge } from '@/modules/inbound/format'
 import { useAuth } from '@/platform/auth/auth-context'
 import { useStableIdempotencyKey } from '@/platform/idempotency'
-import { menuIcon } from '@/platform/menu-icons'
 import { ReferencePicker } from '@/platform/picker/ReferencePicker'
 import { useAttachmentUploads } from './useAttachmentUploads'
 
 const WAREHOUSE_STORAGE_KEY = 'awms:pda:warehouse-id'
-const actionByEntry: Record<string, string> = {
-  receiving: 'action.receiving.create',
-  qc: 'action.quality.check',
-  putaway: 'action.putaway.create',
+type PdaEntryConfig = {
+  path: 'receiving' | 'qc' | 'putaway'
+  title: '收货' | '质检' | '上架'
+  permission: 'action.receiving.create' | 'action.quality.check' | 'action.putaway.create'
+  Icon: LucideIcon
 }
+
+const pdaEntryByCode: Record<string, PdaEntryConfig> = {
+  'pda.receiving': { path: 'receiving', title: '收货', permission: 'action.receiving.create', Icon: ScanLine },
+  'pda.qc': { path: 'qc', title: '质检', permission: 'action.quality.check', Icon: ClipboardCheck },
+  'pda.putaway': { path: 'putaway', title: '上架', permission: 'action.putaway.create', Icon: PackagePlus },
+  receiving: { path: 'receiving', title: '收货', permission: 'action.receiving.create', Icon: ScanLine },
+  qc: { path: 'qc', title: '质检', permission: 'action.quality.check', Icon: ClipboardCheck },
+  putaway: { path: 'putaway', title: '上架', permission: 'action.putaway.create', Icon: PackagePlus },
+} as const
 
 interface WarehouseContext {
   id: string
@@ -92,7 +102,11 @@ export function PdaHomePage() {
   if (page === 'putaway') return <PdaShell title="上架" warehouse={warehouse}><PutawayPage warehouse={warehouse} /></PdaShell>
 
   const entries = (session?.menus.pda ?? [])
-    .filter((entry) => hasPerm('route.inbound') && hasPerm(actionByEntry[entry.code] ?? ''))
+    .flatMap((entry) => {
+      const config = pdaEntryByCode[entry.code]
+      if (!config || !hasPerm('route.inbound') || !hasPerm(config.permission)) return []
+      return [{ ...config, sort: entry.sort }]
+    })
     .sort((a, b) => a.sort - b.sort)
 
   return (
@@ -115,14 +129,13 @@ export function PdaHomePage() {
       <main className="mx-auto max-w-md space-y-4 p-4" data-testid="pda-menu">
         <div className="grid gap-3">
           {entries.map((entry) => {
-            const Icon = menuIcon(entry.code)
-            const title = entry.code === 'qc' ? '质检' : entry.code === 'putaway' ? '上架' : '收货'
+            const { path, title, Icon } = entry
             return (
               <button
-                key={entry.code}
+                key={path}
                 type="button"
                 className="flex min-h-16 items-center gap-3 rounded-lg border bg-card p-4 text-left shadow-sm active:translate-y-px"
-                onClick={() => navigate(`/pda/${entry.code}`)}
+                onClick={() => navigate(`/pda/${path}`)}
                 aria-label={title}
               >
                 <span className="flex size-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -927,8 +940,8 @@ function toWarehouseContext(item: WarehouseItem): WarehouseContext {
 
 function fromDocumentLine(line: ScanDocument['lines'][number], material?: MaterialItem): ReceivingLineDraft {
   return {
-    key: line.id,
-    orderLineId: line.id,
+    key: line.orderLineId,
+    orderLineId: line.orderLineId,
     materialId: line.materialId,
     materialCode: line.materialCode,
     materialName: line.materialName,

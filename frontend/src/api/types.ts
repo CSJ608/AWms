@@ -555,6 +555,18 @@ export interface ScanWarning {
   blocking: boolean
 }
 
+export interface ScanDocumentLine {
+  orderLineId: string
+  lineNo: number
+  materialId: string
+  materialCode: string
+  materialName: string
+  expectedQty: string
+  receivedQty: string
+  remainingQty: string
+  uniqueCodes: UniqueCodeItem[]
+}
+
 export interface ScanDocument {
   inboundOrderId: string
   docType: InboundOrderType
@@ -562,7 +574,7 @@ export interface ScanDocument {
   warehouseId: string
   warehouseCode: string
   status: InboundOrderStatus
-  lines: InboundOrderLine[]
+  lines: ScanDocumentLine[]
 }
 
 export interface ScanMaterial {

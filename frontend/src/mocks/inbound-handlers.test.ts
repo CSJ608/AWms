@@ -10,6 +10,10 @@ import { seedSession } from '@/test/utils'
 import { db } from './db'
 import { MOCK_IDS, seedAttachments, seedBatches, seedInboundOrders, seedLocations, seedMaterials, seedPermissions, seedQualityChecks, seedReceipts, seedSources, seedUsers, seedWarehouses } from './seed'
 
+const scanDocumentLineKeys = [
+  'orderLineId', 'lineNo', 'materialId', 'materialCode', 'materialName', 'expectedQty', 'receivedQty',
+  'remainingQty', 'uniqueCodes',
+].sort()
 const receiptKeys = [
   'id', 'receiptNo', 'warehouseId', 'warehouseCode', 'inboundOrderId', 'sourceDocType', 'sourceDocNo',
   'sourceType', 'sourceCode', 'status', 'lines', 'stagingLocationId', 'stagingLocationCode', 'photos',
@@ -253,6 +257,14 @@ describe('MSW 入库链契约边界', () => {
       ...seedAttachments.flatMap((item) => [item.id, item.uploadedBy]),
     ]
     expect(ids.every((id) => uuid.test(id))).toBe(true)
+  })
+
+  it('单据扫码响应的 document.lines 使用 orderLineId 且不返回 id', async () => {
+    const result = await apiParseScan({ content: `AWMS1:${JSON.stringify({ v: 1, t: 'D', ty: 'PO', d: 'PO-20260819-0001', wh: 'WH-01' })}` })
+    const line = result.document?.lines[0]
+    expect(line).toMatchObject({ orderLineId: MOCK_IDS.inboundOrderLine1, lineNo: 1 })
+    expect(Object.keys(line ?? {}).sort()).toEqual(scanDocumentLineKeys)
+    expect(Object.hasOwn(line ?? {}, 'id')).toBe(false)
   })
 
   it('EAN-13、Code128 和 GS1 返回 EXTERNAL_BARCODE 结构化结果', async () => {
