@@ -7,7 +7,8 @@ import type {
 } from '../api/types'
 import { ApiErrorImpl } from '../api/client'
 import {
-  seedBatches, seedLocations, seedMaterials, seedSources, seedUsers, seedWarehouses,
+  MOCK_IDS, seedAttachments, seedBatches, seedInboundOrders, seedLocations, seedMaterials, seedPrintJobs,
+  seedQualityChecks, seedReceipts, seedSources, seedUsers, seedWarehouses,
 } from './seed'
 
 export interface MockDb {
@@ -16,6 +17,12 @@ export interface MockDb {
   locations: typeof seedLocations
   sources: typeof seedSources
   batches: typeof seedBatches
+  inboundOrders: typeof seedInboundOrders
+  receipts: typeof seedReceipts
+  qualityChecks: typeof seedQualityChecks
+  attachments: typeof seedAttachments
+  printJobs: typeof seedPrintJobs
+  putawayVersions: Record<string, number>
 }
 
 export function createDb(): MockDb {
@@ -25,6 +32,12 @@ export function createDb(): MockDb {
     locations: structuredClone(seedLocations),
     sources: structuredClone(seedSources),
     batches: structuredClone(seedBatches),
+    inboundOrders: structuredClone(seedInboundOrders),
+    receipts: structuredClone(seedReceipts),
+    qualityChecks: structuredClone(seedQualityChecks),
+    attachments: structuredClone(seedAttachments),
+    printJobs: structuredClone(seedPrintJobs),
+    putawayVersions: { [MOCK_IDS.receiptLine2]: 3 },
   }
 }
 
@@ -148,8 +161,8 @@ export function getById<T>(rows: T[], id: string): T | undefined {
   return (rows as Row[]).find((r) => r.id === id) as T | undefined
 }
 
-export function newId(prefix: string): string {
-  return `${prefix}-${crypto.randomUUID().slice(0, 8)}`
+export function newId(_prefix?: string): string {
+  return crypto.randomUUID()
 }
 
 export const nowIso = () => new Date().toISOString()

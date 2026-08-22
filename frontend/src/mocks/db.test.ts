@@ -9,6 +9,7 @@ import {
   apiListBatches, apiListLocations, apiListMaterials, apiMetaFields, apiQuickSearchMaterials,
 } from '../api'
 import { seedSession } from '../test/utils'
+import { MOCK_IDS } from './seed'
 
 beforeEach(() => {
   seedSession()
@@ -32,11 +33,11 @@ describe('mock 数据层：主数据业务规则', () => {
   })
 
   it('删除被批次引用的物料 → MATERIAL_IN_USE（引用保护）', async () => {
-    await expect(apiDeleteMaterial('mat-001')).rejects.toMatchObject({ code: 'MATERIAL_IN_USE', status: 409 })
+    await expect(apiDeleteMaterial(MOCK_IDS.material1)).rejects.toMatchObject({ code: 'MATERIAL_IN_USE', status: 409 })
   })
 
   it('删除未被引用物料 → 204 且列表不再返回', async () => {
-    await apiDeleteMaterial('mat-003')
+    await apiDeleteMaterial(MOCK_IDS.material3)
     const list = await apiListMaterials({ page: 1, pageSize: 100 })
     expect(list.items.find((m) => m.code === 'MAT-003')).toBeUndefined()
     expect(list.total).toBe(24)
@@ -77,9 +78,9 @@ describe('mock 数据层：主数据业务规则', () => {
   })
 
   it('仓库删除保护：有库位 → WAREHOUSE_IN_USE；库位编码仓内唯一', async () => {
-    await expect(apiDeleteWarehouse('wh-01')).rejects.toMatchObject({ code: 'WAREHOUSE_IN_USE', status: 409 })
+    await expect(apiDeleteWarehouse(MOCK_IDS.warehouse1)).rejects.toMatchObject({ code: 'WAREHOUSE_IN_USE', status: 409 })
     await expect(
-      apiCreateLocation('wh-01', { code: 'STG-01', type: 'STAGING' }, 'key-3'),
+      apiCreateLocation(MOCK_IDS.warehouse1, { code: 'STG-01', type: 'STAGING' }, 'key-3'),
     ).rejects.toMatchObject({ code: 'LOCATION_CODE_DUPLICATED', status: 409 })
   })
 
@@ -122,9 +123,9 @@ describe('mock 数据层：主数据业务规则', () => {
   it('传输契约：嵌套列表走 POST .../locations/search；引用选择器快捷搜索走 GET ?keyword=&pageSize=', async () => {
     const spy = vi.spyOn(globalThis, 'fetch')
     try {
-      await apiListLocations('wh-01', { page: 1, pageSize: 20 })
+      await apiListLocations(MOCK_IDS.warehouse1, { page: 1, pageSize: 20 })
       const [url1] = spy.mock.calls[0] as unknown as [string, RequestInit]
-      expect(url1).toBe('/api/warehouses/wh-01/locations/search')
+      expect(url1).toBe(`/api/warehouses/${MOCK_IDS.warehouse1}/locations/search`)
 
       await apiQuickSearchMaterials('LM')
       const [url2, init2] = spy.mock.calls[1] as unknown as [string, RequestInit]

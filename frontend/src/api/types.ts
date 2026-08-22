@@ -312,6 +312,360 @@ export interface BatchItem {
   createdAt: string
 }
 
+// ── 入库链（第 4 批锁定契约）───────────────────────────
+
+export const INBOUND_ORDER_TYPES = ['PO', 'PR', 'OT'] as const
+export type InboundOrderType = (typeof INBOUND_ORDER_TYPES)[number]
+
+export const INBOUND_ORDER_STATUSES = ['CONFIRMED', 'RECEIVING', 'RECEIVED', 'VOIDED'] as const
+export type InboundOrderStatus = (typeof INBOUND_ORDER_STATUSES)[number]
+
+export const RECEIPT_STATUSES = ['RECEIVING', 'CHECKING', 'PUTAWAY', 'DONE'] as const
+export type ReceiptStatus = (typeof RECEIPT_STATUSES)[number]
+
+export const RECEIPT_LINE_STATUSES = ['RECEIVED', 'CHECKED', 'EXCEPTION', 'PUTAWAY_DONE'] as const
+export type ReceiptLineStatus = (typeof RECEIPT_LINE_STATUSES)[number]
+
+export const QUALITY_RESULTS = ['PASS', 'EXCEPTION'] as const
+export type QualityResult = (typeof QUALITY_RESULTS)[number]
+
+export const QUALITY_EXCEPTION_REASONS = ['DAMAGED', 'QTY_MISMATCH', 'OTHER'] as const
+export type QualityExceptionReason = (typeof QUALITY_EXCEPTION_REASONS)[number]
+
+export const QUALITY_RESOLUTION_ACTIONS = ['PASS', 'REJECT'] as const
+export type QualityResolutionAction = (typeof QUALITY_RESOLUTION_ACTIONS)[number]
+
+export const QUALITY_RESOLUTION_STATUSES = ['PENDING', 'RESOLVED'] as const
+export type QualityResolutionStatus = (typeof QUALITY_RESOLUTION_STATUSES)[number]
+
+export const UNIQUE_CODE_STATUSES = ['UNRECEIVED', 'RECEIVED'] as const
+export type UniqueCodeStatus = (typeof UNIQUE_CODE_STATUSES)[number]
+
+export const PRINT_JOB_STATUSES = ['GENERATING', 'READY', 'FAILED'] as const
+export type PrintJobStatus = (typeof PRINT_JOB_STATUSES)[number]
+
+export const PRINT_BIZ_TYPES = ['INBOUND_ORDER', 'INBOUND_ORDER_LINE', 'RECEIPT', 'RECEIPT_LINE'] as const
+export type PrintBizType = (typeof PRINT_BIZ_TYPES)[number]
+
+export const ATTACHMENT_BIZ_TYPES = ['RECEIPT', 'QUALITY_CHECK', 'EXCEPTION'] as const
+export type AttachmentBizType = (typeof ATTACHMENT_BIZ_TYPES)[number]
+
+export interface UniqueCodeItem {
+  code: string
+  quantity: string
+  status: UniqueCodeStatus
+  receivedAt: string | null
+}
+
+export interface InboundOrderLine {
+  id: string
+  lineNo: number
+  materialId: string
+  materialCode: string
+  materialName: string
+  expectedQty: string
+  receivedQty: string
+  remainingQty: string
+  uniqueCodes: UniqueCodeItem[]
+}
+
+export interface InboundOrder {
+  id: string
+  orderNo: string
+  type: InboundOrderType
+  warehouseId: string
+  warehouseCode: string
+  sourceType: SourceType | null
+  sourceCode: string | null
+  status: InboundOrderStatus
+  lines: InboundOrderLine[]
+  createdAt: string
+  createdBy: string
+  voidedAt: string | null
+  voidedBy: string | null
+  voidReason: string | null
+}
+
+export interface InboundOrderCreateRequest {
+  type: InboundOrderType
+  warehouseId: string
+  sourceType?: SourceType | null
+  sourceCode?: string | null
+  lines: Array<{ materialId: string; expectedQty: string }>
+}
+
+export interface InboundOrderVoidRequest {
+  reason: string
+}
+
+export interface BatchProps {
+  sourceBatchNo?: string | null
+  productionDate?: string | null
+  expiryDate?: string | null
+  sourceType?: SourceType | null
+  sourceCode?: string | null
+}
+
+export interface ReceiptLine {
+  id: string
+  lineNo: number
+  orderLineId: string | null
+  orderLineNo: number | null
+  materialId: string
+  materialCode: string
+  materialName: string
+  batchId: string
+  batchNo: string
+  expectedQty: string | null
+  actualQty: string
+  qtyDiff: string | null
+  status: ReceiptLineStatus
+  sourceBatchNo: string | null
+  productionDate: string | null
+  expiryDate: string | null
+}
+
+export interface Receipt {
+  id: string
+  receiptNo: string
+  warehouseId: string
+  warehouseCode: string
+  inboundOrderId: string | null
+  sourceDocType: InboundOrderType
+  sourceDocNo: string | null
+  sourceType: SourceType | null
+  sourceCode: string | null
+  status: ReceiptStatus
+  lines: ReceiptLine[]
+  stagingLocationId: string
+  stagingLocationCode: string
+  photos: string[]
+  operatorId: string
+  operatorName: string
+  occurredAt: string
+}
+
+export interface ReceiptCreateRequestLine {
+  orderLineId?: string | null
+  materialId: string
+  batchId?: string | null
+  batchProps?: BatchProps | null
+  quantity: string
+  uniqueCodes?: string[]
+}
+
+export interface ReceiptCreateRequest {
+  warehouseId: string
+  stagingLocationId: string
+  inboundOrderId?: string | null
+  sourceDocType?: InboundOrderType
+  sourceDocNo?: string | null
+  sourceType?: SourceType | null
+  sourceCode?: string | null
+  lines: ReceiptCreateRequestLine[]
+  photos?: string[]
+}
+
+export interface QualityTodo {
+  receiptLineId: string
+  receiptId: string
+  receiptNo: string
+  warehouseId: string
+  warehouseCode: string
+  materialId: string
+  materialCode: string
+  materialName: string
+  batchId: string
+  batchNo: string
+  quantity: string
+  receivedAt: string
+}
+
+export interface QualityExceptionItem {
+  id: string
+  receiptLineId: string
+  receiptNo: string
+  warehouseId: string
+  warehouseCode: string
+  materialCode: string
+  materialName: string
+  batchNo: string
+  checkedQty: string
+  exceptionReason: QualityExceptionReason
+  note: string | null
+  photoIds: string[]
+  checkedBy: string
+  checkedByName: string
+  checkedAt: string
+  resolutionAction: QualityResolutionAction | null
+  resolutionNote: string | null
+  resolvedBy: string | null
+  resolvedByName: string | null
+  resolvedAt: string | null
+}
+
+export interface PutawayTodo {
+  receiptLineId: string
+  receiptNo: string
+  warehouseId: string
+  warehouseCode: string
+  materialId: string
+  materialCode: string
+  materialName: string
+  batchId: string
+  batchNo: string
+  quantity: string
+  defaultQtyPerLabel: string | null
+  fromLocationId: string
+  fromLocationCode: string
+  inventoryVersion: number
+}
+
+export interface LocationRecommendation {
+  locationId: string
+  locationCode: string
+  reasonCode: 'SAME_MATERIAL' | 'FALLBACK'
+  reason: string
+  recommended: boolean
+}
+
+export interface QualityCheckRequest {
+  result: QualityResult
+  checkedQty: string
+  exceptionReason?: QualityExceptionReason
+  note?: string | null
+  photoIds?: string[]
+}
+
+export interface QualityResolveRequest {
+  action: QualityResolutionAction
+  note?: string | null
+}
+
+export interface PutawayRecordCreateRequest {
+  receiptLineId: string
+  toLocationId: string
+  scannedLocationCode: string
+  expectedInventoryVersion: number
+}
+
+export interface ScanWarning {
+  code: string
+  message: string
+  blocking: boolean
+}
+
+export interface ScanDocumentLine {
+  orderLineId: string
+  lineNo: number
+  materialId: string
+  materialCode: string
+  materialName: string
+  expectedQty: string
+  receivedQty: string
+  remainingQty: string
+  uniqueCodes: UniqueCodeItem[]
+}
+
+export interface ScanDocument {
+  inboundOrderId: string
+  docType: InboundOrderType
+  docNo: string
+  warehouseId: string
+  warehouseCode: string
+  status: InboundOrderStatus
+  lines: ScanDocumentLine[]
+}
+
+export interface ScanMaterial {
+  materialId: string
+  materialCode: string
+  materialName: string
+  batchControlled: boolean
+  labelType: LabelType
+  defaultUom: Uom
+  defaultQtyPerLabel: string | null
+}
+
+export interface ScanBatch {
+  batchId: string
+  batchNo: string
+  sourceBatchNo: string | null
+  productionDate: string | null
+  expiryDate: string | null
+}
+
+export interface ScanSource {
+  sourceType: SourceType
+  sourceCode: string
+  sourceName: string
+}
+
+export interface ScanExternal {
+  code: string
+  format: string
+  parsed: Record<string, string>
+}
+
+export interface ScanResult {
+  type: 'SKU_LABEL' | 'UNIQUE_LABEL' | 'BATCH_LABEL' | 'DOCUMENT_QR' | 'EXTERNAL_BARCODE' | 'UNKNOWN'
+  labelType: 'S' | 'U' | 'B' | 'D' | null
+  material: ScanMaterial | null
+  uniqueCode: UniqueCodeItem | null
+  batch: ScanBatch | null
+  batchProps: BatchProps | null
+  quantity: string | null
+  document: ScanDocument | null
+  source: ScanSource | null
+  external: ScanExternal | null
+  warnings: ScanWarning[]
+  message?: string
+}
+
+export interface ScanParseRequest {
+  content: string
+  context?: {
+    inboundOrderId?: string
+    warehouseId?: string
+  }
+}
+
+export interface AttachmentItem {
+  id: string
+  fileName: string
+  mimeType: string
+  size: number
+  bizType: AttachmentBizType | null
+  bizId: string | null
+  uploadedBy: string
+  uploadedByName: string
+  uploadedAt: string
+  url: string
+  thumbnailUrl: string
+}
+
+export interface PrintJobItem {
+  labelType: 'D' | 'S' | 'U' | 'B' | 'R'
+  content: string
+  readableText: string
+  quantity: string | null
+}
+
+export interface PrintJob {
+  id: string
+  bizType: PrintBizType | null
+  bizId: string | null
+  templateCode: string
+  status: PrintJobStatus
+  items: PrintJobItem[]
+  fileUrl: string | null
+  errorCode: string | null
+  createdBy: string
+  createdByName: string
+  createdAt: string
+  updatedAt: string
+}
+
 // ── 导入导出（导入导出 v0.2）───────────────────────────
 
 export interface FailureDetail {

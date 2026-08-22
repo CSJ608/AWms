@@ -14,6 +14,7 @@ import { AuthContext } from '@/platform/auth/auth-context'
 import { MasterListPage } from '@/platform/master/MasterListPage'
 import { textColumn } from '@/platform/table/columns'
 import { makeAdminSession, makeOperatorSession, makeSupervisorSession, renderApp, seedSession } from '@/test/utils'
+import { MOCK_IDS } from '@/mocks/seed'
 
 describe('菜单与权限过滤', () => {
   it('管理员：四个主数据菜单齐全 + 操作按钮可见', async () => {
@@ -36,7 +37,7 @@ describe('菜单与权限过滤', () => {
   })
 
   it('作业员（OPERATOR）：无 menu.master-data → 主数据菜单不显示；直达物料页 → 无权限页', async () => {
-    renderApp('/login')
+    const view = renderApp('/login')
     const user = userEvent.setup()
     await user.type(screen.getByLabelText(/用户名/), 'wang01')
     await user.type(screen.getByLabelText(/密码/), '123456')
@@ -50,8 +51,9 @@ describe('菜单与权限过滤', () => {
     expect(screen.queryByText('批次')).not.toBeInTheDocument()
 
     // 无 route.master-data → 直达物料页显示无权限页（路由权限守卫）
-    window.history.pushState({}, '', '/web/master/materials')
-    window.dispatchEvent(new PopStateEvent('popstate'))
+    view.unmount()
+    seedSession(makeOperatorSession())
+    renderApp('/web/master/materials')
     expect(await screen.findByText('无权限')).toBeInTheDocument()
   })
 
@@ -99,7 +101,7 @@ describe('菜单与权限过滤', () => {
 
   it('仓管（SUPERVISOR）：库位页按钮可见（action.location.*）', async () => {
     seedSession(makeSupervisorSession())
-    renderApp('/web/master/warehouses/wh-01/locations')
+    renderApp(`/web/master/warehouses/${MOCK_IDS.warehouse1}/locations`)
     await screen.findByText('STG-01')
     expect(screen.getByTestId('btn-create')).toBeInTheDocument()
     expect(screen.getAllByTestId('btn-edit').length).toBeGreaterThan(0)

@@ -22,6 +22,57 @@ namespace AWms.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("AWms.Domain.Entities.Attachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("BizId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BizType")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("MimeType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("UploadedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("UploadedByName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UploadedBy");
+
+                    b.HasIndex("BizType", "BizId");
+
+                    b.ToTable("Attachments", (string)null);
+                });
+
             modelBuilder.Entity("AWms.Domain.Entities.Batch", b =>
                 {
                     b.Property<Guid>("Id")
@@ -78,7 +129,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("MaterialId", "BatchNo")
                         .IsUnique();
 
-                    b.ToTable("Batches");
+                    b.ToTable("Batches", (string)null);
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.IdempotencyRecord", b =>
@@ -102,6 +153,13 @@ namespace AWms.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("PENDING");
+
                     b.Property<int>("StatusCode")
                         .HasColumnType("integer");
 
@@ -112,7 +170,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("Key")
                         .IsUnique();
 
-                    b.ToTable("IdempotencyRecords");
+                    b.ToTable("IdempotencyRecords", (string)null);
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.ImportTask", b =>
@@ -179,7 +237,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("TaskNo")
                         .IsUnique();
 
-                    b.ToTable("ImportTasks");
+                    b.ToTable("ImportTasks", (string)null);
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.ImportTaskDetail", b =>
@@ -213,7 +271,101 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("ImportTaskId");
 
-                    b.ToTable("ImportTaskDetails");
+                    b.ToTable("ImportTaskDetails", (string)null);
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.InboundOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("OrderNo")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceType")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("VoidReason")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTime?>("VoidedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("VoidedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid>("WarehouseId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderNo")
+                        .IsUnique();
+
+                    b.HasIndex("SourceType", "SourceCode");
+
+                    b.HasIndex("WarehouseId", "Status", "CreatedAt");
+
+                    b.ToTable("InboundOrders", (string)null);
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.InboundOrderLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("ExpectedQty")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("LineNo")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("MaterialId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MaterialId");
+
+                    b.HasIndex("OrderId", "LineNo")
+                        .IsUnique();
+
+                    b.ToTable("InboundOrderLines", (string)null);
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Location", b =>
@@ -266,7 +418,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("WarehouseId", "Code")
                         .IsUnique();
 
-                    b.ToTable("Locations");
+                    b.ToTable("Locations", (string)null);
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Material", b =>
@@ -325,7 +477,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("Status");
 
-                    b.ToTable("Materials");
+                    b.ToTable("Materials", (string)null);
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.MenuDefinition", b =>
@@ -377,7 +529,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("ParentId");
 
-                    b.ToTable("MenuDefinitions");
+                    b.ToTable("MenuDefinitions", (string)null);
 
                     b.HasData(
                         new
@@ -436,10 +588,30 @@ namespace AWms.Infrastructure.Migrations
                             Id = new Guid("20000000-0000-0000-0000-000000000005"),
                             Code = "pda.receiving",
                             ModuleCode = "inbound",
-                            RequiredPermissionCode = "route.inbound",
+                            RequiredPermissionCode = "action.receiving.create",
                             Sort = 10,
                             Surface = "PDA",
                             TitleKey = "pda.receiving"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000006"),
+                            Code = "pda.qc",
+                            ModuleCode = "inbound",
+                            RequiredPermissionCode = "action.quality.check",
+                            Sort = 20,
+                            Surface = "PDA",
+                            TitleKey = "pda.qc"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000007"),
+                            Code = "pda.putaway",
+                            ModuleCode = "inbound",
+                            RequiredPermissionCode = "action.putaway.create",
+                            Sort = 30,
+                            Surface = "PDA",
+                            TitleKey = "pda.putaway"
                         });
                 });
 
@@ -474,7 +646,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.ToTable("Permissions");
+                    b.ToTable("Permissions", (string)null);
 
                     b.HasData(
                         new
@@ -500,6 +672,62 @@ namespace AWms.Infrastructure.Migrations
                             Code = "action.receiving.create",
                             ModuleCode = "inbound",
                             Name = "创建收货"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000023"),
+                            Category = "ACTION",
+                            Code = "action.inbound-order.create",
+                            ModuleCode = "inbound",
+                            Name = "创建入库单"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000024"),
+                            Category = "ACTION",
+                            Code = "action.inbound-order.void",
+                            ModuleCode = "inbound",
+                            Name = "作废入库单"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000025"),
+                            Category = "ACTION",
+                            Code = "action.quality.check",
+                            ModuleCode = "inbound",
+                            Name = "PDA质检"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000026"),
+                            Category = "ACTION",
+                            Code = "action.quality.resolve",
+                            ModuleCode = "inbound",
+                            Name = "处理质检异常"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000027"),
+                            Category = "ACTION",
+                            Code = "action.putaway.create",
+                            ModuleCode = "inbound",
+                            Name = "PDA上架"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000028"),
+                            Category = "ACTION",
+                            Code = "action.attachment.upload",
+                            ModuleCode = "inbound",
+                            Name = "上传业务照片"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000029"),
+                            Category = "ACTION",
+                            Code = "action.print.create",
+                            ModuleCode = "inbound",
+                            Name = "生成固定模板打印"
                         },
                         new
                         {
@@ -655,6 +883,381 @@ namespace AWms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("AWms.Domain.Entities.PhysicalInventory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("LocationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SubjectId");
+
+                    b.HasIndex("LocationId", "SubjectId")
+                        .IsUnique();
+
+                    b.ToTable("PhysicalInventories", (string)null);
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.PrintJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("BizId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BizType")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CreatedByName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("FilePath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("TemplateCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BizType", "BizId", "CreatedAt");
+
+                    b.ToTable("PrintJobs", (string)null);
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.PrintJobItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("LabelType")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<Guid>("PrintJobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("Quantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("ReadableText")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Seq")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PrintJobId", "Seq")
+                        .IsUnique();
+
+                    b.ToTable("PrintJobItems", (string)null);
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.PutawayRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("FromLocationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OperatorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OperatorName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("PutawayAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<Guid>("ReceiptLineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("RecommendedLocationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("SourceInventoryVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ToLocationId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PutawayAt");
+
+                    b.HasIndex("ReceiptLineId")
+                        .IsUnique();
+
+                    b.HasIndex("ToLocationId");
+
+                    b.ToTable("PutawayRecords", (string)null);
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.QualityCheck", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CheckedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<decimal>("CheckedQty")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("ExceptionReason")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<Guid>("OperatorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OperatorName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("PhotoIdsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ReceiptLineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ResolutionAction")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid?>("ResolvedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ResolvedByName")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReceiptLineId")
+                        .IsUnique();
+
+                    b.HasIndex("ResolutionAction", "CheckedAt");
+
+                    b.ToTable("QualityChecks", (string)null);
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.Receipt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("InboundOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("OperatorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OperatorName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ReceiptNo")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceDocNo")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceDocType")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("SourceType")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("StagingLocationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("WarehouseId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InboundOrderId");
+
+                    b.HasIndex("ReceiptNo")
+                        .IsUnique();
+
+                    b.HasIndex("StagingLocationId");
+
+                    b.HasIndex("WarehouseId", "Status", "OccurredAt");
+
+                    b.ToTable("Receipts", (string)null);
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.ReceiptLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("ActualQty")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("ExpectedQty")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<DateOnly?>("ExpiryDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("LineNo")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("MaterialId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("OrderLineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("OrderLineNo")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly?>("ProductionDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal?>("QtyDiff")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<Guid>("ReceiptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ReceivedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("SourceBatchNo")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchId");
+
+                    b.HasIndex("OrderLineId");
+
+                    b.HasIndex("ReceiptId", "LineNo")
+                        .IsUnique();
+
+                    b.HasIndex("ReceiptId", "OrderLineId")
+                        .IsUnique()
+                        .HasFilter("\"OrderLineId\" IS NOT NULL");
+
+                    b.HasIndex("MaterialId", "BatchId", "Status");
+
+                    b.ToTable("ReceiptLines", (string)null);
+                });
+
             modelBuilder.Entity("AWms.Domain.Entities.Role", b =>
                 {
                     b.Property<Guid>("Id")
@@ -679,7 +1282,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.ToTable("Roles");
+                    b.ToTable("Roles", (string)null);
 
                     b.HasData(
                         new
@@ -724,7 +1327,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("RoleId", "PermissionId")
                         .IsUnique();
 
-                    b.ToTable("RolePermissions");
+                    b.ToTable("RolePermissions", (string)null);
 
                     b.HasData(
                         new
@@ -861,6 +1464,48 @@ namespace AWms.Infrastructure.Migrations
                         },
                         new
                         {
+                            Id = new Guid("30000000-0000-0000-0000-000000000059"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000023"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000060"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000024"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000061"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000025"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000062"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000026"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000063"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000027"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000064"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000028"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000065"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000029"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
                             Id = new Guid("30000000-0000-0000-0000-000000000021"),
                             PermissionId = new Guid("10000000-0000-0000-0000-000000000001"),
                             RoleId = new Guid("00000000-0000-0000-0000-000000000003")
@@ -875,6 +1520,30 @@ namespace AWms.Infrastructure.Migrations
                         {
                             Id = new Guid("30000000-0000-0000-0000-000000000023"),
                             PermissionId = new Guid("10000000-0000-0000-0000-000000000003"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000066"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000025"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000067"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000027"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000068"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000028"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000069"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000029"),
                             RoleId = new Guid("00000000-0000-0000-0000-000000000003")
                         },
                         new
@@ -990,6 +1659,48 @@ namespace AWms.Infrastructure.Migrations
                             Id = new Guid("30000000-0000-0000-0000-000000000049"),
                             PermissionId = new Guid("10000000-0000-0000-0000-000000000022"),
                             RoleId = new Guid("00000000-0000-0000-0000-000000000002")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000070"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000023"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000002")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000071"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000024"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000002")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000072"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000025"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000002")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000073"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000026"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000002")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000074"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000027"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000002")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000075"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000028"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000002")
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000076"),
+                            PermissionId = new Guid("10000000-0000-0000-0000-000000000029"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000002")
                         });
                 });
 
@@ -1020,7 +1731,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("Type", "ScopeKey", "BizDate")
                         .IsUnique();
 
-                    b.ToTable("Sequences");
+                    b.ToTable("Sequences", (string)null);
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Source", b =>
@@ -1068,7 +1779,166 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("Type", "Code")
                         .IsUnique();
 
-                    b.ToTable("Sources");
+                    b.ToTable("Sources", (string)null);
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.StockLedger", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("BalanceAfter")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("BalanceBefore")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<Guid>("LocationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("OperatorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("Seq")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceDocNo")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceDocType")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TxnGroupId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LocationId");
+
+                    b.HasIndex("OccurredAt");
+
+                    b.HasIndex("SubjectId");
+
+                    b.HasIndex("TxnGroupId", "Seq")
+                        .IsUnique();
+
+                    b.ToTable("StockLedgers", (string)null);
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.StockSubject", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("MaterialId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Uom")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<Guid>("WarehouseId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchId");
+
+                    b.HasIndex("MaterialId");
+
+                    b.HasIndex("WarehouseId", "MaterialId", "BatchId", "Status")
+                        .IsUnique();
+
+                    b.ToTable("StockSubjects", (string)null);
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.TxnGroup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("GroupNo")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupNo")
+                        .IsUnique();
+
+                    b.ToTable("TxnGroups", (string)null);
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.UniqueCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("OrderLineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<DateTime?>("ReceivedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("OrderLineId");
+
+                    b.ToTable("UniqueCodes", (string)null);
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.User", b =>
@@ -1107,7 +1977,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("Username")
                         .IsUnique();
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.UserRole", b =>
@@ -1129,7 +1999,7 @@ namespace AWms.Infrastructure.Migrations
                     b.HasIndex("UserId", "RoleId")
                         .IsUnique();
 
-                    b.ToTable("UserRoles");
+                    b.ToTable("UserRoles", (string)null);
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Warehouse", b =>
@@ -1177,7 +2047,7 @@ namespace AWms.Infrastructure.Migrations
 
                     b.HasIndex("Status");
 
-                    b.ToTable("Warehouses");
+                    b.ToTable("Warehouses", (string)null);
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Batch", b =>
@@ -1202,6 +2072,36 @@ namespace AWms.Infrastructure.Migrations
                     b.Navigation("ImportTask");
                 });
 
+            modelBuilder.Entity("AWms.Domain.Entities.InboundOrder", b =>
+                {
+                    b.HasOne("AWms.Domain.Entities.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.InboundOrderLine", b =>
+                {
+                    b.HasOne("AWms.Domain.Entities.Material", "Material")
+                        .WithMany()
+                        .HasForeignKey("MaterialId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AWms.Domain.Entities.InboundOrder", "Order")
+                        .WithMany("Lines")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Material");
+
+                    b.Navigation("Order");
+                });
+
             modelBuilder.Entity("AWms.Domain.Entities.Location", b =>
                 {
                     b.HasOne("AWms.Domain.Entities.Warehouse", "Warehouse")
@@ -1222,6 +2122,116 @@ namespace AWms.Infrastructure.Migrations
                     b.Navigation("Parent");
                 });
 
+            modelBuilder.Entity("AWms.Domain.Entities.PhysicalInventory", b =>
+                {
+                    b.HasOne("AWms.Domain.Entities.Location", "Location")
+                        .WithMany()
+                        .HasForeignKey("LocationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AWms.Domain.Entities.StockSubject", "Subject")
+                        .WithMany()
+                        .HasForeignKey("SubjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Location");
+
+                    b.Navigation("Subject");
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.PrintJobItem", b =>
+                {
+                    b.HasOne("AWms.Domain.Entities.PrintJob", "PrintJob")
+                        .WithMany("Items")
+                        .HasForeignKey("PrintJobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PrintJob");
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.PutawayRecord", b =>
+                {
+                    b.HasOne("AWms.Domain.Entities.ReceiptLine", "ReceiptLine")
+                        .WithOne()
+                        .HasForeignKey("AWms.Domain.Entities.PutawayRecord", "ReceiptLineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ReceiptLine");
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.QualityCheck", b =>
+                {
+                    b.HasOne("AWms.Domain.Entities.ReceiptLine", "ReceiptLine")
+                        .WithOne()
+                        .HasForeignKey("AWms.Domain.Entities.QualityCheck", "ReceiptLineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ReceiptLine");
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.Receipt", b =>
+                {
+                    b.HasOne("AWms.Domain.Entities.InboundOrder", "InboundOrder")
+                        .WithMany()
+                        .HasForeignKey("InboundOrderId");
+
+                    b.HasOne("AWms.Domain.Entities.Location", "StagingLocation")
+                        .WithMany()
+                        .HasForeignKey("StagingLocationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AWms.Domain.Entities.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("InboundOrder");
+
+                    b.Navigation("StagingLocation");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.ReceiptLine", b =>
+                {
+                    b.HasOne("AWms.Domain.Entities.Batch", "Batch")
+                        .WithMany()
+                        .HasForeignKey("BatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AWms.Domain.Entities.Material", "Material")
+                        .WithMany()
+                        .HasForeignKey("MaterialId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AWms.Domain.Entities.InboundOrderLine", "OrderLine")
+                        .WithMany()
+                        .HasForeignKey("OrderLineId");
+
+                    b.HasOne("AWms.Domain.Entities.Receipt", "Receipt")
+                        .WithMany("Lines")
+                        .HasForeignKey("ReceiptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Batch");
+
+                    b.Navigation("Material");
+
+                    b.Navigation("OrderLine");
+
+                    b.Navigation("Receipt");
+                });
+
             modelBuilder.Entity("AWms.Domain.Entities.RolePermission", b =>
                 {
                     b.HasOne("AWms.Domain.Entities.Permission", "Permission")
@@ -1239,6 +2249,55 @@ namespace AWms.Infrastructure.Migrations
                     b.Navigation("Permission");
 
                     b.Navigation("Role");
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.StockLedger", b =>
+                {
+                    b.HasOne("AWms.Domain.Entities.TxnGroup", "TxnGroup")
+                        .WithMany()
+                        .HasForeignKey("TxnGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("TxnGroup");
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.StockSubject", b =>
+                {
+                    b.HasOne("AWms.Domain.Entities.Batch", "Batch")
+                        .WithMany()
+                        .HasForeignKey("BatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AWms.Domain.Entities.Material", "Material")
+                        .WithMany()
+                        .HasForeignKey("MaterialId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AWms.Domain.Entities.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Batch");
+
+                    b.Navigation("Material");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.UniqueCode", b =>
+                {
+                    b.HasOne("AWms.Domain.Entities.InboundOrderLine", "OrderLine")
+                        .WithMany("UniqueCodes")
+                        .HasForeignKey("OrderLineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OrderLine");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.UserRole", b =>
@@ -1265,9 +2324,29 @@ namespace AWms.Infrastructure.Migrations
                     b.Navigation("Details");
                 });
 
+            modelBuilder.Entity("AWms.Domain.Entities.InboundOrder", b =>
+                {
+                    b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.InboundOrderLine", b =>
+                {
+                    b.Navigation("UniqueCodes");
+                });
+
             modelBuilder.Entity("AWms.Domain.Entities.MenuDefinition", b =>
                 {
                     b.Navigation("Children");
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.PrintJob", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("AWms.Domain.Entities.Receipt", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("AWms.Domain.Entities.Role", b =>

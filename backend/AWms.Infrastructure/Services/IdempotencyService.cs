@@ -1,6 +1,8 @@
 ﻿using AWms.Domain.Entities;
 using AWms.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 
 namespace AWms.Infrastructure.Services;
 
@@ -10,7 +12,7 @@ public record IdempotencyReservation(bool IsFirst, IdempotencyRecord? Existing);
 /// 幂等记录服务（契约 2.6 / 规范 §2.4）：
 /// - TryReserve：首个请求预留（Key 唯一），并发同 key 由唯一索引兜底；
 /// - Complete：首个请求完成后写入响应（含错误响应）；
-/// - TTL 24h，过期记录清理后可重放。
+/// - 普通记录 TTL 24h；关键写端点的首次完成结果永久保留，避免业务成功后过期重放。
 /// </summary>
 public class IdempotencyService
 {
@@ -18,24 +20,42 @@ public class IdempotencyService
 
     public IdempotencyService(AWmsDbContext db) => _db = db;
 
-    public async Task<IdempotencyReservation> TryReserveAsync(string key, TimeSpan ttl, CancellationToken ct = default)
+    public async Task LockKeyAsync(string key, CancellationToken ct = default)
+    {
+        var transaction = _db.Database.CurrentTransaction
+            ?? throw new InvalidOperationException("幂等键锁必须在数据库事务内获取");
+        var connection = _db.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction.GetDbTransaction();
+        command.CommandText = "SELECT pg_advisory_xact_lock(hashtextextended(@key, 0))";
+        command.Parameters.Add(new NpgsqlParameter("key", key));
+        await command.ExecuteScalarAsync(ct);
+    }
+
+    public async Task<IdempotencyReservation> TryReserveAsync(
+        string key,
+        TimeSpan ttl,
+        bool preserveCompleted = false,
+        CancellationToken ct = default)
     {
         var now = DateTime.UtcNow;
-        // 清理过期记录（用跟踪删除以兼容 InMemory 单测与 PG 双跑）
-        var expired = await _db.IdempotencyRecords.Where(x => x.ExpiresAt < now).ToListAsync(ct);
-        if (expired.Count > 0)
+        var existing = await _db.IdempotencyRecords.FirstOrDefaultAsync(x => x.Key == key, ct);
+        if (existing != null &&
+            existing.ExpiresAt < now &&
+            !(preserveCompleted && existing.Status == AWms.Domain.Enums.IdempotencyStatus.COMPLETED))
         {
-            _db.IdempotencyRecords.RemoveRange(expired);
+            _db.IdempotencyRecords.Remove(existing);
             await _db.SaveChangesAsync(ct);
+            existing = null;
         }
 
-        var existing = await _db.IdempotencyRecords.FirstOrDefaultAsync(x => x.Key == key, ct);
         if (existing != null)
             return new IdempotencyReservation(false, existing);
 
         var record = new IdempotencyRecord
         {
             Key = key,
+            Status = AWms.Domain.Enums.IdempotencyStatus.PENDING,
             ResponseJson = string.Empty,
             StatusCode = 0,
             CreatedAt = now,
@@ -65,6 +85,7 @@ public class IdempotencyService
             return;
         record.StatusCode = statusCode;
         record.ResponseJson = responseJson;
+        record.Status = AWms.Domain.Enums.IdempotencyStatus.COMPLETED;
         await _db.SaveChangesAsync(ct);
     }
 }

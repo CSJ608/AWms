@@ -6,11 +6,12 @@ import { useTranslation } from 'react-i18next'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { AuthProvider, useAuth } from '@/platform/auth/auth-context'
-import { RequireAuth, RequirePermission, WEB_ROUTES, menuTarget } from '@/platform/route-registry'
+import { RequireAuth, RequireInboundRoute, RequirePdaAction, RequirePermission, WEB_ROUTES, menuTarget } from '@/platform/route-registry'
 import { AppLayout } from '@/modules/web/layout/AppLayout'
 import { LoginPage } from '@/modules/web/login/LoginPage'
 import { ModulePlaceholderPage } from '@/modules/web/ModulePlaceholderPage'
 import { PdaHomePage } from '@/modules/pda/PdaHomePage'
+import { InboundWorkspacePage } from '@/modules/inbound/InboundWorkspacePage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,8 +29,8 @@ function WebIndexRedirect() {
   const menus = session?.menus.web ?? []
   const first = [...menus]
     .sort((a, b) => a.sort - b.sort)
-    .find((m) => menuTarget(m).startsWith('/web/'))
-  return <Navigate to={first ? menuTarget(first) : '/web/master/materials'} replace />
+    .find((m) => menuTarget(m) !== '/')
+  return <Navigate to={first ? menuTarget(first) : '/'} replace />
 }
 
 
@@ -56,7 +57,7 @@ export function AppRoutes() {
       {/* 未实现模块（工作台/入库/系统）：AppLayout 内占位页（保留侧边栏 + 顶部登出） */}
       <Route path="/" element={<RequireAuth><AppLayout /></RequireAuth>}>
         <Route index element={<PlaceholderRoute titleKey="nav.workspace" />} />
-        <Route path="inbound" element={<PlaceholderRoute titleKey="nav.inbound" />} />
+        <Route path="inbound/*" element={<RequireInboundRoute><InboundWorkspacePage /></RequireInboundRoute>} />
         <Route path="system" element={<PlaceholderRoute titleKey="nav.system" />} />
       </Route>
       <Route path="/master-data" element={<Navigate to="/web/master/materials" replace />} />
@@ -81,14 +82,10 @@ export function AppRoutes() {
       </Route>
 
       {/* PDA 作业端（双路由树预留） */}
-      <Route
-        path="/pda"
-        element={
-          <RequireAuth>
-            <PdaHomePage />
-          </RequireAuth>
-        }
-      />
+      <Route path="/pda" element={<RequireAuth><PdaHomePage /></RequireAuth>} />
+      <Route path="/pda/receiving" element={<RequireAuth><RequirePdaAction action="action.receiving.create"><PdaHomePage /></RequirePdaAction></RequireAuth>} />
+      <Route path="/pda/qc" element={<RequireAuth><RequirePdaAction action="action.quality.check"><PdaHomePage /></RequirePdaAction></RequireAuth>} />
+      <Route path="/pda/putaway" element={<RequireAuth><RequirePdaAction action="action.putaway.create"><PdaHomePage /></RequirePdaAction></RequireAuth>} />
 
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

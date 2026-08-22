@@ -20,9 +20,10 @@ describe('App 根路由', () => {
     expect(screen.getByTestId('sidebar-nav')).toBeInTheDocument()
   })
 
-  it('已登录访问 /inbound 与 /system 显示开发中占位页（保留侧边栏导航）', async () => {
+  it('已登录访问 /inbound 进入入库管理；/system 仍显示开发中占位页', async () => {
     renderAuthed('/inbound')
-    expect(await screen.findByText('模块开发中，敬请期待')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '入库管理', level: 2 })).toBeInTheDocument()
+    expect(screen.getByText('入库单')).toBeInTheDocument()
     expect(screen.getByTestId('sidebar-nav')).toBeInTheDocument()
     expect(screen.getAllByText('入库').length).toBeGreaterThan(0)
   })
@@ -35,7 +36,7 @@ describe('App 根路由', () => {
     const user = userEvent.setup()
     const nav = screen.getByTestId('sidebar-nav')
     await user.click(within(nav).getByRole('link', { name: '入库' }))
-    expect(await screen.findByText('模块开发中，敬请期待')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '入库管理', level: 2 })).toBeInTheDocument()
     expect(screen.getByTestId('sidebar-nav')).toBeInTheDocument()
 
     // 侧边栏 → 返回主数据物料页
